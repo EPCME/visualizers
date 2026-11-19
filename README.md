@@ -7,7 +7,7 @@ It's a static, client-side-only app. There's no build step and no server. Files 
 ## Use it
 
 1. Load a score: a `.musicxml`, `.xml` or compressed `.mxl` file, either by choosing a file or by pasting a URL.
-2. Build the mapping on the page: one row per rule, each replacing a note with **text or a picture**. A picture can be uploaded or linked by URL. You can also load a mapping file, or edit the mapping as text. Your mapping is remembered in the browser, and **Download mapping** saves it as a file.
+2. Build the mapping on the page: one row per rule, each replacing a note with **text or a picture**. A picture can be uploaded or linked by URL. You can also start from a preset (foods, animal pictures, or D-major solfège from `examples/`), load a mapping file, or edit the mapping as text. Your mapping is remembered in the browser, and **Download mapping** saves it as a file.
 3. Read the result by measure or as continuous text. You can also copy it as plain text.
 4. Optionally:
    - **Select notes** on the engraved score (rendered by [Verovio](https://www.verovio.org/)) by clicking them or dragging a box. While a selection exists, only the selected notes are shown in the mapped view.

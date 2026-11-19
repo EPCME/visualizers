@@ -170,6 +170,8 @@ footer { color: var(--muted); font-size: .85rem; padding-bottom: 2rem; }
 .upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .r-del { background: transparent; color: var(--muted); border: 0; font-size: 1.3rem; line-height: 1; padding: .1em .4em; }
 .r-del:hover { color: var(--err); filter: none; }
+.preset-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; font-size: .9rem; }
+.preset-row select { flex: 1 1 12rem; min-width: 0; }
 .rule-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 button.secondary { background: transparent; color: var(--accent); font-size: .85rem; padding: .35em .7em; }
 button.secondary:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); filter: none; }

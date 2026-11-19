@@ -314,6 +314,15 @@ $('map-url-form').addEventListener('submit', (e) => {
   if (url) loadMap(async () => new TextDecoder().decode(await fetchBytes(url)), url, url);
 });
 $('map-text').addEventListener('input', (e) => setMapText(e.target.value, 'textarea'));
+$('map-preset').addEventListener('change', async (e) => {
+  const sel = e.target;
+  if (!sel.value) return;
+  const url = new URL(sel.value, location.href).href;
+  const label = sel.selectedOptions[0].textContent;
+  sel.value = ''; // back to "Choose…", so the same preset can be picked again after editing
+  $('map-url').value = url;
+  await loadMap(async () => new TextDecoder().decode(await fetchBytes(url)), `preset: ${label}`, url);
+});
 
 // ---------- rule editor ----------
 

@@ -33,6 +33,15 @@
         <h2><span class="num">2</span> Mapping</h2>
         <p class="hint">Build the rules below, or load a mapping file. <a href="#help">Format help</a></p>
 
+        <label class="preset-row">Start from a preset
+          <select id="map-preset">
+            <option value="">Choose…</option>
+            <option value="examples/foods.txt">Foods (C = cheese, D = dumpling…)</option>
+            <option value="examples/animals.txt">Animal pictures</option>
+            <option value="examples/solfege-d-major.txt">Solfège, D major (D = Do)</option>
+          </select>
+        </label>
+
         <div id="rules" class="rules" aria-label="Mapping rules"></div>
         <div class="rule-actions">
           <button type="button" class="secondary" id="add-rule">+ Add rule</button>
