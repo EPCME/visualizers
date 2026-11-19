@@ -30,7 +30,29 @@ export function normaliseKey(raw) {
   return m[1].toUpperCase() + acc + (m[3] ?? '');
 }
 
-/** Parse mapping file text. Returns { rules: Map<key,string>, warnings: string[] }. */
+/**
+ * Parse a replacement value. Pictures are written markdown-style, `![label](url)`, or as `img:url`.
+ * Returns { text, image } where image is a URL (http(s), relative, or data:) or null.
+ */
+export function parseValue(raw) {
+  if (raw && typeof raw === 'object') {
+    return { text: String(raw.text ?? raw.alt ?? raw.label ?? ''), image: raw.image ?? raw.img ?? raw.src ?? null };
+  }
+  const v = String(raw).trim();
+  const md = /^!\[([^\]]*)\]\(\s*(\S+?)\s*\)$/.exec(v);
+  if (md) return { text: md[1], image: md[2] };
+  const pre = /^(?:img|image|picture):\s*(\S+)$/i.exec(v);
+  if (pre) return { text: '', image: pre[1] };
+  return { text: v.replace(/^(["'])(.*)\1$/, '$2'), image: null };
+}
+
+/** Serialise one value back to the text format. */
+export function formatValue({ text, image }) {
+  if (image) return `![${(text || '').replace(/[\]\n]/g, ' ')}](${image})`;
+  return /^\s|\s$|^["']|^!\[|^(img|image|picture):|\s\/\//i.test(text) ? `"${text}"` : text;
+}
+
+/** Parse mapping file text. Returns { rules: Map<key,{text,image}>, entries, warnings }. */
 export function parseMapping(text) {
   const rules = new Map();
   const warnings = [];
@@ -44,7 +66,7 @@ export function parseMapping(text) {
     } catch (e) {
       throw new Error(`Mapping looks like JSON but couldn't be parsed: ${e.message}`);
     }
-    entries = Object.entries(obj).map(([k, v], i) => [k, typeof v === 'string' ? v : JSON.stringify(v), `entry ${i + 1}`]);
+    entries = Object.entries(obj).map(([k, v], i) => [k, v, `entry ${i + 1}`]);
   } else {
     text.split(/\r?\n/).forEach((line, i) => {
       // Whole-line comments start with '#' or '//'; inline comments use ' //' ('#' would clash with sharps).
@@ -56,12 +78,15 @@ export function parseMapping(text) {
         warnings.push(`Line ${i + 1}: expected "NOTE = text", got "${line.trim()}"`);
         return;
       }
-      entries.push([m[1], m[2].replace(/^(["'])(.*)\1$/, '$2'), `line ${i + 1}`]);
+      entries.push([m[1], m[2], `line ${i + 1}`]);
     });
   }
 
-  for (const [k, v, where] of entries) {
+  const parsed = [];
+  for (const [k, raw, where] of entries) {
+    const v = parseValue(raw);
     const key = normaliseKey(k);
+    parsed.push({ rawKey: String(k).trim(), key, value: v });
     if (!key) {
       warnings.push(`${where}: "${k}" isn't a note name (try G, F#, Bb4, rest or *)`);
       continue;
@@ -70,7 +95,7 @@ export function parseMapping(text) {
     rules.set(key, v);
   }
   if (rules.size === 0) warnings.push('The mapping has no usable rules.');
-  return { rules, warnings };
+  return { rules, entries: parsed, warnings };
 }
 
 function accidental(alter) {
@@ -85,14 +110,16 @@ export function noteName(note) {
 }
 
 /**
- * Resolve a note to its mapped string.
- * Returns { text, key } where key is the rule that matched, or null for no match.
+ * Resolve a note to its mapped value.
+ * Returns { value: {text,image}|null, key } where key is the rule that matched, or null for no match.
  */
-export function resolve(rules, note) {
+export function resolve(allRules, note) {
+  // Rules with no text and no picture (e.g. a half-filled editor row) don't match anything yet.
+  const rules = new Map([...allRules].filter(([, v]) => v.text || v.image));
   if (note.rest) {
-    if (rules.has('REST')) return { text: rules.get('REST'), key: 'rest' };
-    if (rules.has('*')) return { text: rules.get('*'), key: '*' };
-    return { text: null, key: null };
+    if (rules.has('REST')) return { value: rules.get('REST'), key: 'rest' };
+    if (rules.has('*')) return { value: rules.get('*'), key: '*' };
+    return { value: null, key: null };
   }
   const alter = Math.round(note.alter || 0);
   const spelled = note.step + accidental(alter);
@@ -111,8 +138,8 @@ export function resolve(rules, note) {
   }
 
   for (const key of candidates) {
-    if (rules.has(key)) return { text: rules.get(key), key };
+    if (rules.has(key)) return { value: rules.get(key), key };
   }
-  if (rules.has('*')) return { text: rules.get('*'), key: '*' };
-  return { text: null, key: null };
+  if (rules.has('*')) return { value: rules.get('*'), key: '*' };
+  return { value: null, key: null };
 }

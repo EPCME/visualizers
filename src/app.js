@@ -1,5 +1,6 @@
 import { parseMusicXml, bytesToXml } from './musicxml.js';
 import { parseMapping, resolve, noteName } from './mapping.js';
+import { mountEditor, rowsToText, rowsFromEntries, STARTER_KEYS } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -48,21 +49,38 @@ async function loadScore(getBytes, label, url = null) {
 async function loadMap(getText, label, url = null) {
   setStatus('map', `Loading ${label}…`);
   try {
-    setMapText(await getText());
+    setMapText(await getText(), 'external');
     state.mapUrl = url;
   } catch (e) {
     setStatus('map', e.message, 'error');
   }
 }
 
-function setMapText(text, fromEditor = false) {
+const STORE_KEY = 'visualizers.mapping';
+function remember(text) {
+  try { localStorage.setItem(STORE_KEY, text); } catch { /* storage unavailable or full: fine */ }
+}
+function recall() {
+  try { return localStorage.getItem(STORE_KEY); } catch { return null; }
+}
+
+/**
+ * The mapping text is the source of truth. `source` says who changed it, so the other views update:
+ * 'editor' (rule rows), 'textarea' (Edit as text), or 'external' (file, URL, storage, example).
+ */
+function setMapText(text, source = 'external') {
   state.mapText = text;
-  if (!fromEditor) $('map-text').value = text;
+  if (source !== 'textarea') $('map-text').value = text;
+  if (source !== 'editor') state.mapUrl = null;
+  remember(text);
   try {
-    const { rules, warnings } = parseMapping(text);
+    const { rules, entries, warnings } = parseMapping(text);
+    if (source !== 'editor') editor.setRows(rowsFromEntries(entries));
+    const empty = rules.size === 0 && !text.trim();
     state.rules = rules;
-    state.mapWarnings = warnings;
-    setStatus('map', `✓ ${rules.size} rule${rules.size === 1 ? '' : 's'}${warnings.length ? `, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`, warnings.length ? 'warn' : 'ok');
+    state.mapWarnings = empty ? [] : warnings;
+    if (empty) setStatus('map', 'No rules yet.');
+    else setStatus('map', `✓ ${rules.size} rule${rules.size === 1 ? '' : 's'}${warnings.length ? `, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`, warnings.length ? 'warn' : 'ok');
   } catch (e) {
     state.rules = null;
     state.mapWarnings = [];
@@ -108,7 +126,7 @@ function* resolvedEvents(voice, o) {
       grace: notes.every((n) => n.grace),
       notes: notes.map((note) => {
         const r = resolve(state.rules, note);
-        return { note, name: noteName(note), text: r.text, key: r.key };
+        return { note, name: noteName(note), text: r.value?.text ?? null, image: r.value?.image ?? null, key: r.key };
       }),
     };
   }
@@ -119,11 +137,20 @@ function eventEl(ev, o) {
   wrap.className = 'ev' + (ev.notes.length > 1 ? ' chord' : '') + (ev.rest ? ' rest' : '') + (ev.grace ? ' grace' : '');
   for (const r of ev.notes) {
     const tok = document.createElement('span');
-    tok.className = 'tok' + (r.key == null ? ' unmapped' : '');
+    tok.className = 'tok' + (r.key == null && !r.note.rest ? ' unmapped' : '');
     const shown = r.text ?? r.name;
-    tok.textContent = shown;
-    if (r.key != null && !r.note.rest) tok.style.setProperty('--h', hueFor(shown));
-    tok.title = `${r.name}${r.note.type ? ` (${r.note.type}${'.'.repeat(r.note.dots)})` : ''} → ${r.key == null ? 'no rule' : `rule "${r.key}"`}`;
+    if (r.image) {
+      tok.classList.add('pic');
+      const img = document.createElement('img');
+      img.src = r.image;
+      img.alt = r.text || r.name;
+      img.loading = 'lazy';
+      tok.append(img);
+    } else {
+      tok.textContent = shown;
+      if (r.key != null && !r.note.rest) tok.style.setProperty('--h', hueFor(shown));
+    }
+    tok.title = `${r.text ? `${r.text}: ` : ''}${r.name}${r.note.type ? ` (${r.note.type}${'.'.repeat(r.note.dots)})` : ''} → ${r.key == null ? 'no rule' : `rule "${r.key}"`}`;
     if (o.names) {
       const small = document.createElement('small');
       small.textContent = r.name;
@@ -176,7 +203,7 @@ function render() {
         for (const ev of resolvedEvents(v, o)) {
           for (const r of ev.notes) {
             if (r.key == null) { if (!r.note.rest) unmapped++; continue; }
-            const u = usage.get(r.key) ?? { text: r.text, count: 0 };
+            const u = usage.get(r.key) ?? { count: 0 };
             u.count++;
             usage.set(r.key, u);
           }
@@ -193,15 +220,22 @@ function render() {
   // Legend: rules in the order they appear in the mapping file, with how often each was used.
   const legend = $('legend');
   legend.replaceChildren();
-  for (const [key, text] of state.rules) {
+  for (const [key, { text, image }] of state.rules) {
     const k = key === 'REST' ? 'rest' : key;
     const u = usage.get(k);
     const item = document.createElement('span');
     item.className = 'leg' + (u ? '' : ' unused');
-    if (k !== 'rest') item.style.setProperty('--h', hueFor(text));
+    if (k !== 'rest' && !image) item.style.setProperty('--h', hueFor(text));
     item.innerHTML = '<b></b> <span></span> <i></i>';
     item.children[0].textContent = k;
-    item.children[1].textContent = text;
+    if (image) {
+      const img = document.createElement('img');
+      img.src = image;
+      img.alt = '';
+      item.children[1].append(img, text ? ` ${text}` : '');
+    } else {
+      item.children[1].textContent = text;
+    }
     item.children[2].textContent = u ? `×${u.count}` : 'unused';
     legend.append(item);
   }
@@ -221,7 +255,7 @@ function asPlainText() {
     const measures = part.measures.map((m) => ({
       number: m.number,
       text: m.voices.map((v) => [...resolvedEvents(v, o)]
-        .map((ev) => ev.notes.map((r) => r.text ?? r.name).join('+')).join(' ')).filter(Boolean).join(' / '),
+        .map((ev) => ev.notes.map((r) => r.text || (r.image ? `[${r.name}]` : r.text ?? r.name)).join('+')).join(' ')).filter(Boolean).join(' / '),
     }));
     if (o.layout === 'flow') out.push(measures.map((m) => m.text).filter(Boolean).join(' '));
     else for (const m of measures) out.push(`${m.number}: ${m.text}`);
@@ -261,9 +295,48 @@ $('map-url-form').addEventListener('submit', (e) => {
   const url = $('map-url').value.trim();
   if (url) loadMap(async () => new TextDecoder().decode(await fetchBytes(url)), url, url);
 });
-$('map-text').addEventListener('input', (e) => {
+$('map-text').addEventListener('input', (e) => setMapText(e.target.value, 'textarea'));
+
+// ---------- rule editor ----------
+
+const editor = mountEditor($('rules'), (rows) => {
   state.mapUrl = null; // edited, so the URL no longer describes it
-  setMapText(e.target.value, true);
+  setMapText(rowsToText(rows), 'editor');
+});
+const blankRow = (key = '') => ({ key, kind: 'text', text: '', image: null });
+$('add-rule').addEventListener('click', () => {
+  editor.addRows([blankRow()]);
+  editor.focusRow(editor.getRows().length - 1);
+});
+$('starter-rules').addEventListener('click', () => {
+  const have = new Set(editor.getRows().map((r) => r.key.trim().toUpperCase()));
+  const first = editor.getRows().length;
+  editor.addRows(STARTER_KEYS.filter((k) => !have.has(k)).map((k) => blankRow(k)));
+  editor.focusRow(first);
+});
+let clearedBackup = null;
+let clearTimer;
+$('clear-rules').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  clearTimeout(clearTimer);
+  if (clearedBackup != null) { // second click within the window: undo
+    setMapText(clearedBackup, 'external');
+    clearedBackup = null;
+    btn.textContent = 'Clear all';
+    return;
+  }
+  if (!editor.getRows().length) return;
+  clearedBackup = state.mapText;
+  setMapText('', 'external');
+  btn.textContent = 'Undo clear';
+  clearTimer = setTimeout(() => { clearedBackup = null; btn.textContent = 'Clear all'; }, 8000);
+});
+$('download-map').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([state.mapText], { type: 'text/plain' }));
+  a.download = 'mapping.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout']) $(id).addEventListener('change', render);
 $('copy-text').addEventListener('click', (e) => copy(asPlainText(), e.currentTarget));
@@ -314,4 +387,6 @@ if (params.get('map')) {
   const m = params.get('map');
   $('map-url').value = m;
   loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), m, m);
+} else {
+  setMapText(recall() ?? '', 'external');
 }

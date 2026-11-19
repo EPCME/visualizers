@@ -31,17 +31,29 @@
 
       <div class="panel" id="map-panel">
         <h2><span class="num">2</span> Mapping</h2>
-        <p class="hint">One rule per line, like <code>G = cheese</code>. JSON works too. <a href="#help">Format help</a></p>
-        <label class="drop" data-target="map">
-          <input type="file" id="map-file" accept=".txt,.json,.map,text/plain,application/json">
-          <span>Choose a file or drop it here</span>
-        </label>
-        <form class="url-row" id="map-url-form">
-          <input type="url" id="map-url" placeholder="…or paste a URL to a mapping file">
-          <button type="submit">Load</button>
-        </form>
+        <p class="hint">Build the rules below, or load a mapping file. <a href="#help">Format help</a></p>
+
+        <div id="rules" class="rules" aria-label="Mapping rules"></div>
+        <div class="rule-actions">
+          <button type="button" class="secondary" id="add-rule">+ Add rule</button>
+          <button type="button" class="secondary" id="starter-rules" title="Adds a rule for each of C D E F G A B">+ C–B starter set</button>
+          <button type="button" class="secondary" id="download-map">Download mapping</button>
+          <button type="button" class="link danger" id="clear-rules">Clear all</button>
+        </div>
+
+        <details id="map-load">
+          <summary>Load a mapping file</summary>
+          <label class="drop" data-target="map">
+            <input type="file" id="map-file" accept=".txt,.json,.map,text/plain,application/json">
+            <span>Choose a file or drop it here</span>
+          </label>
+          <form class="url-row" id="map-url-form">
+            <input type="url" id="map-url" placeholder="…or paste a URL to a mapping file">
+            <button type="submit">Load</button>
+          </form>
+        </details>
         <details id="map-edit">
-          <summary>View or edit the mapping</summary>
+          <summary>Edit as text</summary>
           <textarea id="map-text" spellcheck="false" rows="10" aria-label="Mapping text"></textarea>
         </details>
         <p class="status" id="map-status" aria-live="polite"></p>
@@ -86,9 +98,12 @@ Bb = blueberry
 # one specific octave, which beats the plain rule
 G5 = gouda
 rest = ...
+# a picture, by URL (the label in [ ] is optional; it shows on hover and in copied text)
+A = ![apple](https://example.com/apple.png)
 # anything not matched above
 * = ?</pre>
-      <p>Or as JSON: <code>{"G": "cheese", "F#": "lime", "rest": "..."}</code></p>
+      <p>Or as JSON: <code>{"G": "cheese", "A": {"image": "https://…/apple.png", "text": "apple"}}</code></p>
+      <p>Pictures you upload in the rule editor are shrunk and stored inside the mapping itself (as <code>data:</code> URLs), so a downloaded mapping file carries its pictures with it. Your current mapping is also remembered in this browser between visits.</p>
       <p>Each note is matched from the most specific rule to the least: the exact spelling with its octave (<code>F#4</code>), the spelling alone (<code>F#</code>), the enharmonic equivalent (<code>Gb4</code>, then <code>Gb</code>), and finally <code>*</code>. A note that matches nothing shows its own name, highlighted.</p>
       <p>Loading from a URL only works when the server allows cross-origin requests (CORS). GitHub raw links (<code>raw.githubusercontent.com</code>) and Gists work. If a URL won't load, download the file and choose it instead.</p>
       <p>Links can preload files: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>

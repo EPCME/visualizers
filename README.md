@@ -7,7 +7,7 @@ It's a static, client-side-only app. There's no build step and no server. Files 
 ## Use it
 
 1. Load a score: a `.musicxml`, `.xml` or compressed `.mxl` file, either by choosing a file or by pasting a URL.
-2. Load a mapping file the same way, or edit it in place on the page.
+2. Build the mapping on the page: one row per rule, each replacing a note with **text or a picture**. A picture can be uploaded or linked by URL. You can also load a mapping file, or edit the mapping as text. Your mapping is remembered in the browser, and **Download mapping** saves it as a file.
 3. Read the result by measure or as continuous text. You can also copy it as plain text.
 
 Preload both files with `?score=<url>&map=<url>`. The app needs CORS-friendly URLs, such as `raw.githubusercontent.com` or Gists.
@@ -20,11 +20,14 @@ C = cheese
 G = grape
 F# = falafel      // sharps/flats: #, b, ##, bb, ♯, ♭
 G5 = gouda        // one octave only; beats the plain G rule
+A = ![apple](https://example.com/apple.png)   // a picture; the [label] is optional
 rest = (pause)
 * = ?             // fallback for anything unmatched
 ```
 
-JSON is accepted too: `{"G": "cheese", "F#": "lime"}`.
+JSON is accepted too: `{"G": "cheese", "A": {"image": "https://…/apple.png", "text": "apple"}}`.
+
+Pictures uploaded in the editor are shrunk to at most 240px and embedded as `data:` URLs, so a downloaded mapping is self-contained.
 
 Each note is matched from the most specific rule to the least: spelling plus octave (`F#4`), then spelling (`F#`), then the enharmonic equivalent (`Gb4`, `Gb`), then `*`. Notes that match nothing are shown by name and highlighted.
 
@@ -36,4 +39,5 @@ Serve the folder with any static server, for example `python3 -m http.server`, a
 
 - `src/musicxml.js`: MusicXML and `.mxl` parsing (DOMParser plus a tiny zip reader using `DecompressionStream`)
 - `src/mapping.js`: mapping-file parsing and note resolution
+- `src/editor.js`: on-page rule editor (rows ↔ mapping text)
 - `src/app.js`: UI
