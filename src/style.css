@@ -199,7 +199,18 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 #sel-count { color: var(--ink); }
 .engraving {
   position: relative; background: #fff; color: #000; border-radius: 8px; overflow-x: auto;
-  user-select: none; -webkit-user-select: none; min-height: 3rem; cursor: crosshair;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; min-height: 3rem; cursor: crosshair;
+  touch-action: manipulation; /* no double-tap zoom, so taps register immediately */
+  -webkit-tap-highlight-color: transparent;
+}
+.engraving.box-mode { touch-action: none; outline: 2px dashed #2f5d8a; outline-offset: 2px; }
+#box-mode[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.coarse { display: none; }
+@media (pointer: coarse) {
+  .fine { display: none; }
+  .coarse { display: inline; }
+  button.coarse { display: inline-block; }
+  .engraving g.note:hover { color: inherit; fill: inherit; } /* no sticky hover on touch */
 }
 .engraving .pages > svg { display: block; width: 100%; height: auto; }
 .engraving g.note { cursor: pointer; }

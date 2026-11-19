@@ -376,6 +376,12 @@ const engraver = mountEngraver($('engraving'), {
   onStatus: (msg, kind) => setStatus('engrave', msg, kind),
 });
 $('sel-clear').addEventListener('click', () => setSelection(new Set()));
+$('box-mode').addEventListener('click', (e) => {
+  const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+  e.currentTarget.setAttribute('aria-pressed', String(on));
+  e.currentTarget.textContent = on ? 'Box select: on (drag to select)' : 'Box select';
+  engraver.setBoxMode(on);
+});
 // Hovering a mapped note lights up its source note(s) in the engraving.
 $('render').addEventListener('pointerover', (e) => {
   const ev = e.target.closest('.ev');

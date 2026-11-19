@@ -64,7 +64,8 @@
 
     <section id="engraved" class="engraved" hidden>
       <div class="sel-bar">
-        <p class="hint"><b>Select notes</b> by clicking them, or by dragging a box around several. <span id="sel-count"></span></p>
+        <p class="hint"><b>Select notes</b> by <span class="fine">clicking them, or by dragging a box around several</span><span class="coarse">tapping them, or turn on <i>Box select</i> and drag over several</span>. <span id="sel-count"></span></p>
+        <button type="button" class="secondary coarse" id="box-mode" aria-pressed="false">Box select</button>
         <button type="button" class="secondary" id="sel-clear" hidden>Clear selection</button>
       </div>
       <div id="engraving" class="engraving" aria-label="Engraved score"></div>

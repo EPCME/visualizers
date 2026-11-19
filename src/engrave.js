@@ -14,7 +14,8 @@ function loadToolkit() {
   return toolkitPromise;
 }
 
-const SCALE = 38; // Verovio zoom, in percent
+// Verovio zoom, in percent: bigger on narrow screens so notes are big enough to tap.
+const scaleFor = (width) => (width < 500 ? 46 : width < 800 ? 42 : 38);
 
 /**
  * Mount an engraver into `container`.
@@ -54,12 +55,12 @@ export function mountEngraver(container, { onSelect, onStatus }) {
     const width = Math.max(320, container.clientWidth);
     lastWidth = width;
     tk.setOptions({
-      pageWidth: Math.round((width * 100) / SCALE),
-      scale: SCALE,
+      pageWidth: Math.round((width * 100) / scaleFor(width)),
+      scale: scaleFor(width),
       adjustPageHeight: true,
       pageMarginTop: 40, pageMarginBottom: 40, pageMarginLeft: 20, pageMarginRight: 20,
       footer: 'none',
-      header: 'auto',
+      header: 'none', // the page already shows the title
       svgViewBox: true,
     });
     if (!tk.loadData(xml)) {
@@ -85,17 +86,43 @@ export function mountEngraver(container, { onSelect, onStatus }) {
 
   const changed = () => { paint(); onSelect(new Set(selected)); };
 
-  // Click a note to toggle it; drag a box to add every note it touches.
+  // Selection. Mouse: click toggles the nearest note, drag draws a box that adds notes.
+  // Touch: tap toggles the nearest note (generous radius for fingers); with box mode on, drag draws a box.
+  let boxMode = false;
   let drag = null;
+
+  const noteRects = () => [...pages.querySelectorAll('g.note')].map((g) => ({ g, r: (g.querySelector('.notehead') ?? g).getBoundingClientRect() }));
+
+  function nearestNote(x, y, radius) {
+    let best = null;
+    let bestD = radius;
+    for (const { g, r } of noteRects()) {
+      const dx = Math.max(r.left - x, 0, x - r.right);
+      const dy = Math.max(r.top - y, 0, y - r.bottom);
+      const d = Math.hypot(dx, dy);
+      if (d <= bestD) { best = g; bestD = d; }
+    }
+    return best;
+  }
+
+  function toggle(g) {
+    if (selected.has(g.id)) selected.delete(g.id);
+    else selected.add(g.id);
+    changed();
+  }
+
   pages.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.pointerType === 'touch') return;
-    drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const touch = e.pointerType !== 'mouse';
+    drag = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId, touch, canBox: !touch || boxMode };
+    if (drag.canBox) pages.setPointerCapture?.(e.pointerId);
   });
-  window.addEventListener('pointermove', (e) => {
+  pages.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
-    if (!drag.moved) { drag.moved = true; pages.setPointerCapture?.(e.pointerId); }
+    if (!drag.moved && Math.hypot(dx, dy) < (drag.touch ? 10 : 6)) return;
+    drag.moved = true;
+    if (!drag.canBox) return; // touch without box mode: let the page scroll
     e.preventDefault();
     const r = container.getBoundingClientRect();
     Object.assign(band.style, {
@@ -106,16 +133,17 @@ export function mountEngraver(container, { onSelect, onStatus }) {
     });
     band.hidden = false;
   });
-  window.addEventListener('pointerup', (e) => {
+  const finish = (e, cancelled) => {
     if (!drag || e.pointerId !== drag.id) return;
     const d = drag;
     drag = null;
     band.hidden = true;
+    if (cancelled) return;
     if (d.moved) {
+      if (!d.canBox) return;
       const box = { l: Math.min(e.clientX, d.x), r: Math.max(e.clientX, d.x), t: Math.min(e.clientY, d.y), b: Math.max(e.clientY, d.y) };
       let added = 0;
-      for (const g of pages.querySelectorAll('g.note')) {
-        const nb = (g.querySelector('.notehead') ?? g).getBoundingClientRect();
+      for (const { g, r: nb } of noteRects()) {
         if (nb.right >= box.l && nb.left <= box.r && nb.bottom >= box.t && nb.top <= box.b && !selected.has(g.id)) {
           selected.add(g.id);
           added++;
@@ -124,25 +152,20 @@ export function mountEngraver(container, { onSelect, onStatus }) {
       if (added) changed();
       return;
     }
-    const note = e.target.closest?.('g.note');
-    if (note && pages.contains(note)) {
-      if (selected.has(note.id)) selected.delete(note.id);
-      else selected.add(note.id);
-      changed();
-    }
-  });
-  // Touch: plain taps toggle (no box select, so scrolling still works).
-  pages.addEventListener('pointerup', (e) => {
-    if (e.pointerType !== 'touch') return;
-    const note = e.target.closest?.('g.note');
-    if (!note) return;
-    if (selected.has(note.id)) selected.delete(note.id);
-    else selected.add(note.id);
-    changed();
-  });
+    const g = nearestNote(e.clientX, e.clientY, d.touch ? 24 : 10);
+    if (g) toggle(g);
+  };
+  pages.addEventListener('pointerup', (e) => finish(e, false));
+  pages.addEventListener('pointercancel', (e) => finish(e, true));
+
+  function setBoxMode(on) {
+    boxMode = on;
+    container.classList.toggle('box-mode', on);
+  }
 
   return {
     render,
+    setBoxMode,
     setSelection(ids) { selected = new Set(ids); paint(); },
     highlight(ids) {
       for (const g of pages.querySelectorAll('g.note.hl')) g.classList.remove('hl');
