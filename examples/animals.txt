@@ -1,0 +1,10 @@
+# Starter mapping: each note becomes an animal picture.
+A = ![](https://epcme.github.io/visualizers/src/bear.png)
+B = ![](https://epcme.github.io/visualizers/src/beaver.png)
+C = ![](https://epcme.github.io/visualizers/src/cat.png)
+D = ![](https://epcme.github.io/visualizers/src/dog.png)
+E = ![](https://epcme.github.io/visualizers/src/elephant.png)
+F = ![](https://epcme.github.io/visualizers/src/penguin.png)
+G = ![](https://epcme.github.io/visualizers/src/giraffe.png)
+C# = ![](https://epcme.github.io/visualizers/src/cow.png)
+F# = ![](https://epcme.github.io/visualizers/src/turkey.png)

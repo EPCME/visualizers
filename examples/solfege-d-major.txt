@@ -1,0 +1,11 @@
+# Starter mapping: movable-do solfège in D major (do = D).
+# For another key, move every rule by the same interval (e.g. G major: G = Do … F# = Ti).
+D = Do
+E = Re
+F# = Mi
+G = Fa
+A = Sol
+B = La
+C# = Ti
+rest = (rest)
+* = ?
