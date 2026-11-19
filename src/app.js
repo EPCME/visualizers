@@ -1,5 +1,6 @@
 import { parseMusicXml, bytesToXml } from './musicxml.js';
 import { parseMapping, resolve, noteName } from './mapping.js';
+import { packText, unpackText } from './share.js';
 import { mountEditor, rowsToText, rowsFromEntries, STARTER_KEYS } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
@@ -46,10 +47,10 @@ async function loadScore(getBytes, label, url = null) {
   }
 }
 
-async function loadMap(getText, label, url = null) {
+async function loadMap(getText, label, url = null, opts = {}) {
   setStatus('map', `Loading ${label}…`);
   try {
-    setMapText(await getText(), 'external');
+    setMapText(await getText(), 'external', opts);
     state.mapUrl = url;
   } catch (e) {
     setStatus('map', e.message, 'error');
@@ -67,12 +68,13 @@ function recall() {
 /**
  * The mapping text is the source of truth. `source` says who changed it, so the other views update:
  * 'editor' (rule rows), 'textarea' (Edit as text), or 'external' (file, URL, storage, example).
+ * `persist: false` (used for share links) keeps the visitor's own saved mapping until they edit.
  */
-function setMapText(text, source = 'external') {
+function setMapText(text, source = 'external', { persist = true } = {}) {
   state.mapText = text;
   if (source !== 'textarea') $('map-text').value = text;
   if (source !== 'editor') state.mapUrl = null;
-  remember(text);
+  if (persist) remember(text);
   try {
     const { rules, entries, warnings } = parseMapping(text);
     if (source !== 'editor') editor.setRows(rowsFromEntries(entries));
@@ -245,6 +247,7 @@ function render() {
   const wEl = $('warnings');
   wEl.hidden = !warns.length;
   wEl.replaceChildren(...warns.map((w) => Object.assign(document.createElement('p'), { textContent: w })));
+  updateShareButton();
 }
 
 function asPlainText() {
@@ -340,17 +343,40 @@ $('download-map').addEventListener('click', () => {
 });
 for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout']) $(id).addEventListener('change', render);
 $('copy-text').addEventListener('click', (e) => copy(asPlainText(), e.currentTarget));
-$('share-link').addEventListener('click', (e) => {
-  const btn = e.currentTarget;
-  if (!state.scoreUrl || !state.mapUrl) {
-    btn.textContent = 'Load both from URLs first';
-    setTimeout(() => { btn.textContent = 'Copy share link'; }, 2000);
-    return;
+/** Can the current score + mapping be put in a link? Returns null if yes, else the reason why not. */
+function shareBlocker() {
+  if (!state.scoreUrl) return 'To share, load the score from a URL (a file you chose can\'t go in a link).';
+  if (state.mapUrl) return null;
+  const uploaded = [...(state.rules?.entries() ?? [])].filter(([, v]) => v.image?.startsWith('data:')).map(([k]) => (k === 'REST' ? 'rest' : k));
+  if (uploaded.length) {
+    return `To share, swap the uploaded picture${uploaded.length === 1 ? '' : 's'} (${uploaded.join(', ')}) for picture URLs. Uploaded pictures can't go in a link.`;
   }
-  const u = new URL(location.href);
-  u.search = new URLSearchParams({ score: state.scoreUrl, map: state.mapUrl }).toString();
-  u.hash = '';
-  copy(u.toString(), btn);
+  return null;
+}
+
+function updateShareButton() {
+  const reason = shareBlocker();
+  const btn = $('share-link');
+  btn.disabled = !!reason;
+  btn.title = reason ?? 'Copy a link that opens this score with this mapping';
+  $('share-hint').textContent = reason ?? '';
+  $('share-hint').hidden = !reason;
+}
+
+async function shareUrl() {
+  const u = new URL(location.pathname, location.origin);
+  const p = new URLSearchParams({ score: state.scoreUrl });
+  // An unedited mapping that came from a URL is linked by URL; anything else travels inside the link.
+  if (state.mapUrl) p.set('map', state.mapUrl);
+  else p.set('m', await packText(state.mapText));
+  u.search = p.toString();
+  return u.toString();
+}
+
+$('share-link').addEventListener('click', async (e) => {
+  const btn = e.currentTarget; // currentTarget is cleared once the handler awaits
+  if (shareBlocker()) return;
+  copy(await shareUrl(), btn);
 });
 
 // Drag and drop onto either drop zone.
@@ -376,17 +402,19 @@ $('load-example').addEventListener('click', () => {
   loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), 'example mapping', m);
 });
 
-// ?score=<url>&map=<url> preloads both.
+// Share links: ?score=<url> plus either &map=<url> or &m=<packed mapping text>.
 const params = new URLSearchParams(location.search);
 if (params.get('score')) {
   const s = params.get('score');
   $('score-url').value = s;
   loadScore(() => fetchBytes(s), s, s);
 }
-if (params.get('map')) {
+if (params.get('m')) {
+  loadMap(() => unpackText(params.get('m')), 'shared mapping', null, { persist: false });
+} else if (params.get('map')) {
   const m = params.get('map');
   $('map-url').value = m;
-  loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), m, m);
+  loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), m, m, { persist: false });
 } else {
   setMapText(recall() ?? '', 'external');
 }

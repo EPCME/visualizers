@@ -79,9 +79,10 @@
             </select>
           </label>
           <button type="button" id="copy-text">Copy as text</button>
-          <button type="button" id="share-link" title="Only works when both files were loaded from URLs">Copy share link</button>
+          <button type="button" id="share-link">Copy share link</button>
         </div>
       </div>
+      <p id="share-hint" class="share-hint" hidden></p>
       <div id="warnings" class="warnings" hidden></div>
       <div id="legend" class="legend"></div>
       <div id="render"></div>
@@ -106,7 +107,9 @@ A = ![apple](https://example.com/apple.png)
       <p>Pictures you upload in the rule editor are shrunk and stored inside the mapping itself (as <code>data:</code> URLs), so a downloaded mapping file carries its pictures with it. Your current mapping is also remembered in this browser between visits.</p>
       <p>Each note is matched from the most specific rule to the least: the exact spelling with its octave (<code>F#4</code>), the spelling alone (<code>F#</code>), the enharmonic equivalent (<code>Gb4</code>, then <code>Gb</code>), and finally <code>*</code>. A note that matches nothing shows its own name, highlighted.</p>
       <p>Loading from a URL only works when the server allows cross-origin requests (CORS). GitHub raw links (<code>raw.githubusercontent.com</code>) and Gists work. If a URL won't load, download the file and choose it instead.</p>
-      <p>Links can preload files: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>
+      <h2>Sharing</h2>
+      <p><b>Copy share link</b> works when the score was loaded from a URL and the mapping uses only text and picture <em>URLs</em>. Uploaded pictures are too big to fit in a link. A mapping built or edited on the page travels compressed inside the link, so nothing else needs hosting. Opening a shared link doesn't replace your own saved mapping unless you edit what you were sent.</p>
+      <p>Hand-made links work too: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>
     </section>
   </main>
 
