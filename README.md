@@ -47,3 +47,24 @@ Serve the folder with any static server, for example `python3 -m http.server`, a
 - `src/engrave.js`: Verovio engraving (CDN, pinned 6.3.0) and note selection
 - `src/editor.js`: on-page rule editor (rows ↔ mapping text)
 - `src/app.js`: UI
+
+
+## Acknowledgements
+
+1. https://openclipart.org/detail/355536/rainbow-color-animated-heart
+2. https://openclipart.org/detail/310847/turkey-turkey-outline
+3. https://openclipart.org/detail/232703/thanksgiving-turkeyture
+4. https://openclipart.org/detail/27563/little-penguin
+5. https://openclipart.org/detail/17702/cartoon-bear
+6. https://openclipart.org/detail/17637/cartoon-sheep
+7. https://openclipart.org/detail/17595/cartoon-squirrel
+8. https://openclipart.org/detail/17635/cartoon-elk
+9. https://openclipart.org/detail/17683/cartoon-cat
+10. https://openclipart.org/detail/17824/cartoon-goat
+11. https://openclipart.org/detail/17676/cartoon-cow
+12. https://openclipart.org/detail/17624/cartoon-gnu
+13. https://openclipart.org/detail/17628/cartoon-giraffe
+14. https://openclipart.org/detail/17575/cartoon-kangaroo
+15. https://openclipart.org/detail/17566/cartoon-owl
+16. https://openclipart.org/detail/17814/cartoon-beaver
+17. https://openclipart.org/detail/17810/cartoon-elephant
