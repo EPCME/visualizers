@@ -1,0 +1,14 @@
+# Example mapping: every pitch letter becomes a food.
+# Format: NOTE = text. Octave-specific rules (like G5) beat plain ones.
+C = cheese
+D = dumpling
+E = egg
+F = fig
+G = grape
+A = apple
+B = bagel
+# sharps and flats (enharmonics match too, so F# also covers Gb)
+F# = falafel
+Bb = burrito
+rest = (pause)
+* = ?

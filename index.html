@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Note Visualizer</title>
+  <meta name="description" content="Show every note of a MusicXML score as words from your own mapping file. Runs entirely in your browser.">
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <header>
+    <h1>Note Visualizer</h1>
+    <p class="lede">Load a MusicXML score and a mapping file, and every note is replaced by the word you've mapped it to. Everything runs in your browser; nothing is uploaded anywhere.</p>
+  </header>
+
+  <main>
+    <section class="inputs">
+      <div class="panel" id="score-panel">
+        <h2><span class="num">1</span> Score</h2>
+        <p class="hint">A MusicXML file: <code>.musicxml</code>, <code>.xml</code>, or compressed <code>.mxl</code>.</p>
+        <label class="drop" data-target="score">
+          <input type="file" id="score-file" accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml">
+          <span>Choose a file or drop it here</span>
+        </label>
+        <form class="url-row" id="score-url-form">
+          <input type="url" id="score-url" placeholder="…or paste a URL to a MusicXML file">
+          <button type="submit">Load</button>
+        </form>
+        <p class="status" id="score-status" aria-live="polite"></p>
+      </div>
+
+      <div class="panel" id="map-panel">
+        <h2><span class="num">2</span> Mapping</h2>
+        <p class="hint">One rule per line, like <code>G = cheese</code>. JSON works too. <a href="#help">Format help</a></p>
+        <label class="drop" data-target="map">
+          <input type="file" id="map-file" accept=".txt,.json,.map,text/plain,application/json">
+          <span>Choose a file or drop it here</span>
+        </label>
+        <form class="url-row" id="map-url-form">
+          <input type="url" id="map-url" placeholder="…or paste a URL to a mapping file">
+          <button type="submit">Load</button>
+        </form>
+        <details id="map-edit">
+          <summary>View or edit the mapping</summary>
+          <textarea id="map-text" spellcheck="false" rows="10" aria-label="Mapping text"></textarea>
+        </details>
+        <p class="status" id="map-status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <p class="examples">No files handy? <button type="button" class="link" id="load-example">Load the example</button> (<i>Twinkle, Twinkle</i> with a food mapping).</p>
+
+    <section id="output" hidden>
+      <div class="toolbar">
+        <div class="score-meta">
+          <h2 id="score-title"></h2>
+          <p id="score-sub"></p>
+        </div>
+        <div class="controls">
+          <label><input type="checkbox" id="opt-names"> Show note names</label>
+          <label><input type="checkbox" id="opt-rests" checked> Show rests</label>
+          <label><input type="checkbox" id="opt-ties"> Merge tied notes</label>
+          <label>Layout
+            <select id="opt-layout">
+              <option value="measures">By measure</option>
+              <option value="flow">Continuous text</option>
+            </select>
+          </label>
+          <button type="button" id="copy-text">Copy as text</button>
+          <button type="button" id="share-link" title="Only works when both files were loaded from URLs">Copy share link</button>
+        </div>
+      </div>
+      <div id="warnings" class="warnings" hidden></div>
+      <div id="legend" class="legend"></div>
+      <div id="render"></div>
+    </section>
+
+    <section id="help" class="help">
+      <h2>Mapping file format</h2>
+      <p>Each line gives a note and the text to show for it. Use <code>=</code>, <code>:</code> or a tab between them. Lines starting with <code>#</code> or <code>//</code> are comments.</p>
+<pre># every G, in any octave
+G = cheese
+# a sharp or flat (♯ and ♭ work too)
+F# = lime
+Bb = blueberry
+# one specific octave, which beats the plain rule
+G5 = gouda
+rest = ...
+# anything not matched above
+* = ?</pre>
+      <p>Or as JSON: <code>{"G": "cheese", "F#": "lime", "rest": "..."}</code></p>
+      <p>Each note is matched from the most specific rule to the least: the exact spelling with its octave (<code>F#4</code>), the spelling alone (<code>F#</code>), the enharmonic equivalent (<code>Gb4</code>, then <code>Gb</code>), and finally <code>*</code>. A note that matches nothing shows its own name, highlighted.</p>
+      <p>Loading from a URL only works when the server allows cross-origin requests (CORS). GitHub raw links (<code>raw.githubusercontent.com</code>) and Gists work. If a URL won't load, download the file and choose it instead.</p>
+      <p>Links can preload files: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Part of the visualizers project. Supports MusicXML partwise and timewise scores.</p>
+  </footer>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
