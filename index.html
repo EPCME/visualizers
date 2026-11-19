@@ -92,11 +92,28 @@
           <label><input type="checkbox" id="opt-rests" checked> Show rests</label>
           <label><input type="checkbox" id="opt-ties"> Merge tied notes</label>
           <label title="Show 2 or more repeated notes of the same pitch in a row as one"><input type="checkbox" id="opt-coalesce"> Coalesce repeated notes</label>
-          <label>Split at pitches <input type="text" id="opt-split" placeholder="e.g. C4, G5" size="10" autocomplete="off" spellcheck="false"></label>
+          <label>Split
+            <select id="opt-splitby">
+              <option value="">No split</option>
+              <option value="pitch">At pitches</option>
+              <option value="voice" title="One section per voice in the score">By voice</option>
+            </select>
+            <input type="text" id="opt-split" placeholder="e.g. C4, G5" size="10" autocomplete="off" spellcheck="false" aria-label="Pitches to split at" hidden>
+          </label>
           <label>Layout
             <select id="opt-layout">
               <option value="measures">By measure</option>
               <option value="flow">Continuous text</option>
+            </select>
+          </label>
+          <label title="Every section and part uses the same columns, so a measure is in the same place in each">Measures per line
+            <select id="opt-perline">
+              <option value="">Auto</option>
+              <option>2</option>
+              <option>3</option>
+              <option>4</option>
+              <option>6</option>
+              <option>8</option>
             </select>
           </label>
           <button type="button" id="copy-text">Copy as text</button>

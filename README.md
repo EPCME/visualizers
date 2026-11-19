@@ -12,6 +12,8 @@ It's a static, client-side-only app. There's no build step and no server. Files 
 4. Optionally:
    - **Select notes** on the engraved score (rendered by [Verovio](https://www.verovio.org/)) by clicking them or dragging a box. While a selection exists, only the selected notes are shown in the mapped view.
    - **Split at pitches**: enter thresholds such as `C4, G5` to divide the mapped view into one section per pitch range ([lo, hi)).
+   - **Split by voice**: offered when a part has more than one voice. Shows one section per staff and voice.
+   - **Measures per line**: every section and part uses the same columns, so a given measure is in the same place in each. **Auto** fits as many as the width allows.
    - **Coalesce repeated notes**: 2+ adjacent notes of the same pitch in a voice are shown as one.
 
 Preload both files with `?score=<url>&map=<url>`. The app needs CORS-friendly URLs, such as `raw.githubusercontent.com` or Gists.

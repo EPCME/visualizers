@@ -104,10 +104,13 @@ summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
 
 .part h3 { margin: 1rem 0 .5rem; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .part-body { display: flex; flex-wrap: wrap; gap: 0; }
+/* Same grid for every part in every section (all part bodies are the same width), so measure N lines up. */
+.layout-measures .part-body { display: grid; grid-template-columns: var(--per-line, repeat(auto-fill, minmax(9rem, 1fr))); row-gap: 8px; }
 .layout-measures .measure {
-  position: relative; padding: 1.1rem .6rem .5rem; border-left: 1px solid var(--line); min-width: 4rem;
+  position: relative; padding: 1.1rem .6rem .5rem; min-width: 0; overflow-wrap: anywhere;
+  border-left: 1px solid var(--line); box-shadow: 1px 0 0 var(--line); /* closing barline at each row end */
 }
-.layout-measures .part-body { border-right: 1px solid var(--line); row-gap: 8px; }
+.layout-measures .tok { max-width: 100%; }
 .mnum { position: absolute; top: .1rem; left: .35rem; font-size: .7rem; color: var(--muted); }
 .voice { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; }
 .voice + .voice { margin-top: 4px; padding-top: 4px; border-top: 1px dotted var(--line); }

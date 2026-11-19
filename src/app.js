@@ -1,6 +1,6 @@
 import { parseMusicXml, bytesToXml } from './musicxml.js';
 import { parseMapping } from './mapping.js';
-import { buildView, parseThresholds, rangesFrom } from './view.js';
+import { buildView, parseThresholds, rangesFrom, voiceSections, WHOLE } from './view.js';
 import { mountEngraver } from './engrave.js';
 import { packText, unpackText } from './share.js';
 import { mountEditor, rowsToText, rowsFromEntries, STARTER_KEYS } from './editor.js';
@@ -42,6 +42,7 @@ async function loadScore(getBytes, label, url = null, { selection = [] } = {}) {
     const xml = await bytesToXml(await getBytes());
     state.score = parseMusicXml(xml);
     state.scoreUrl = url;
+    syncSplitControls();
     setSelection(new Set(selection));
     $('engraved').hidden = false;
     engraver.render(state.score.xml);
@@ -113,7 +114,9 @@ function hueFor(s) {
 }
 
 function opts() {
-  const { points, bad } = parseThresholds($('opt-split').value);
+  const mode = $('opt-splitby').value;
+  const { points, bad } = mode === 'pitch' ? parseThresholds($('opt-split').value) : { points: [], bad: [] };
+  const voices = mode === 'voice' ? voiceSections(state.score) : [];
   return {
     names: $('opt-names').checked,
     rests: $('opt-rests').checked,
@@ -121,7 +124,7 @@ function opts() {
     coalesce: $('opt-coalesce').checked,
     layout: $('opt-layout').value,
     selected: state.selected,
-    ranges: rangesFrom(points),
+    sections: mode === 'voice' ? (voices.length ? voices : [WHOLE]) : rangesFrom(points),
     badThresholds: bad,
   };
 }
@@ -157,6 +160,23 @@ function eventEl(ev, o) {
   return wrap;
 }
 
+/** Grid columns for the "By measure" layout. Every part in every section shares them, so measure N lines up. */
+function perLine() {
+  const n = Number($('opt-perline').value);
+  return n ? `repeat(${n}, minmax(0, 1fr))` : 'repeat(auto-fill, minmax(9rem, 1fr))';
+}
+
+/** Offer "By voice" only when the score has voices to split; show the pitch box only when splitting at pitches. */
+function syncSplitControls() {
+  const sel = $('opt-splitby');
+  const canVoice = !state.score || voiceSections(state.score).length > 0;
+  const opt = sel.querySelector('option[value="voice"]');
+  opt.hidden = opt.disabled = !canVoice;
+  if (!canVoice && sel.value === 'voice') sel.value = '';
+  $('opt-split').hidden = sel.value !== 'pitch';
+  $('opt-perline').disabled = $('opt-layout').value === 'flow';
+}
+
 function render() {
   const out = $('output');
   if (!state.score || !state.rules) {
@@ -177,13 +197,15 @@ function render() {
   root.className = `layout-${o.layout}`;
   const split = sections.length > 1;
 
-  for (const { range, noteCount, parts } of sections) {
+  root.style.setProperty('--per-line', perLine());
+  $('opt-perline').disabled = o.layout === 'flow';
+  for (const { section, noteCount, parts } of sections) {
     const host = split ? document.createElement('section') : root;
     if (split) {
       host.className = 'range';
       const h = document.createElement('h3');
       h.className = 'range-h';
-      h.textContent = `Notes ${range.label}`;
+      h.textContent = section.title;
       const n = document.createElement('span');
       n.textContent = noteCount ? ` · ${noteCount} note${noteCount === 1 ? '' : 's'}` : ' · no notes';
       h.append(n);
@@ -192,6 +214,7 @@ function render() {
       if (!noteCount) continue;
     }
     for (const part of parts) {
+      if (split && parts.length > 1 && !part.eventCount) continue; // e.g. a part that lacks this voice
       const sec = document.createElement('section');
       sec.className = 'part';
       if (parts.length > 1) {
@@ -264,9 +287,10 @@ function asPlainText() {
   const o = opts();
   const out = [state.score.title, ''];
   const sections = buildView(state.score, state.rules, o);
-  for (const { range, parts } of sections) {
-    if (sections.length > 1) out.push(`# Notes ${range.label}`, '');
+  for (const { section, parts } of sections) {
+    if (sections.length > 1) out.push(`# ${section.title}`, '');
     for (const part of parts) {
+      if (sections.length > 1 && parts.length > 1 && !part.eventCount) continue;
       if (parts.length > 1) out.push(`## ${part.name}`);
       const measures = part.measures.map((m) => ({
         number: m.number,
@@ -365,7 +389,12 @@ $('download-map').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
-for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout', 'opt-coalesce']) $(id).addEventListener('change', render);
+for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout', 'opt-coalesce', 'opt-perline']) $(id).addEventListener('change', render);
+$('opt-splitby').addEventListener('change', () => {
+  syncSplitControls();
+  if ($('opt-splitby').value === 'pitch') $('opt-split').focus();
+  render();
+});
 $('opt-split').addEventListener('input', render);
 
 // ---------- engraved score + selection ----------
@@ -422,7 +451,9 @@ async function shareUrl() {
   const u = new URL(location.pathname, location.origin);
   const p = new URLSearchParams({ score: state.scoreUrl });
   const split = $('opt-split').value.trim();
-  if (split) p.set('split', split);
+  if ($('opt-splitby').value === 'pitch' && split) p.set('split', split);
+  if ($('opt-splitby').value === 'voice') p.set('splitby', 'voice');
+  if ($('opt-perline').value) p.set('per', $('opt-perline').value);
   if ($('opt-coalesce').checked) p.set('coalesce', '1');
   if (state.selected.size) p.set('sel', await packText([...state.selected].join(' ')));
   // An unedited mapping that came from a URL is linked by URL; anything else travels inside the link.
@@ -463,7 +494,10 @@ $('load-example').addEventListener('click', () => {
 
 // Share links: ?score=<url> plus either &map=<url> or &m=<packed mapping text>.
 const params = new URLSearchParams(location.search);
-if (params.get('split')) $('opt-split').value = params.get('split');
+if (params.get('split')) { $('opt-split').value = params.get('split'); $('opt-splitby').value = 'pitch'; }
+if (params.get('splitby') === 'voice') $('opt-splitby').value = 'voice';
+if ([...$('opt-perline').options].some((op) => op.value && op.value === params.get('per'))) $('opt-perline').value = params.get('per');
+syncSplitControls();
 if (params.get('coalesce') === '1') $('opt-coalesce').checked = true;
 if (params.get('score')) {
   const s = params.get('score');
