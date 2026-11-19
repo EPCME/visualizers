@@ -70,8 +70,10 @@ const kids = (el, name) => [...el.children].filter((c) => c.localName === name);
 
 /**
  * Parse MusicXML text into:
- * { title, composer, parts: [{ id, name, measures: [{ number, voices: [{ voice, events: [[note, ...chord], ...] }] }] }] }
- * Each note: { step, alter, octave, rest, unpitched, duration, type, dots, grace, tieStop, staff, voice }
+ * { title, composer, xml, parts: [{ id, name, measures: [{ number, voices: [{ voice, events: [[note, ...chord], ...] }] }] }] }
+ * Each note: { id, step, alter, octave, midi, rest, unpitched, duration, type, dots, grace, tieStop, staff, voice }
+ * Every <note> gets an `id` attribute (kept if already present) so the engraved score can be linked back;
+ * `xml` is the score re-serialised with those ids.
  */
 export function parseMusicXml(xml) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -80,6 +82,15 @@ export function parseMusicXml(xml) {
   const root = doc.documentElement;
   if (root.localName !== 'score-partwise' && root.localName !== 'score-timewise') {
     throw new Error(`Expected a MusicXML score, found <${root.localName}>.`);
+  }
+
+  // Stamp ids before anything is cloned, so engraved notes (Verovio keeps these ids) map to parsed notes.
+  let seq = 0;
+  const seen = new Set();
+  for (const n of root.getElementsByTagName('note')) {
+    let id = n.getAttribute('id');
+    if (!id || seen.has(id)) n.setAttribute('id', (id = `vz-n${++seq}`));
+    seen.add(id);
   }
 
   const title = text(root, 'work > work-title') || text(root, 'movement-title') ||
@@ -123,13 +134,14 @@ export function parseMusicXml(xml) {
     });
     parts.push({ id, name: partNames.get(id) ?? id, measures });
   }
-  return { title, composer, parts };
+  return { title, composer, parts, xml: new XMLSerializer().serializeToString(doc) };
 }
 
 function parseNote(el) {
   const pitch = el.querySelector(':scope > pitch');
   const unpitched = el.querySelector(':scope > unpitched');
   const n = {
+    id: el.getAttribute('id'),
     rest: !!el.querySelector(':scope > rest'),
     unpitched: !!unpitched,
     chord: !!el.querySelector(':scope > chord'),
@@ -152,5 +164,12 @@ function parseNote(el) {
   } else if (!n.rest) {
     n.rest = true; // a note with no pitch info: treat as a rest
   }
+  n.midi = n.rest || !n.step ? null : midiOf(n.step, n.alter, n.octave);
   return n;
+}
+
+const STEP_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+/** MIDI number (C4 = 60). Alter may be fractional for microtones; it's rounded. */
+export function midiOf(step, alter = 0, octave = 4) {
+  return 12 * (octave + 1) + STEP_SEMITONES[step.toUpperCase()] + Math.round(alter || 0);
 }

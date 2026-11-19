@@ -1,5 +1,7 @@
 import { parseMusicXml, bytesToXml } from './musicxml.js';
-import { parseMapping, resolve, noteName } from './mapping.js';
+import { parseMapping } from './mapping.js';
+import { buildView, parseThresholds, rangesFrom } from './view.js';
+import { mountEngraver } from './engrave.js';
 import { packText, unpackText } from './share.js';
 import { mountEditor, rowsToText, rowsFromEntries, STARTER_KEYS } from './editor.js';
 
@@ -12,6 +14,7 @@ const state = {
   mapUrl: null,
   rules: null,
   mapWarnings: [],
+  selected: new Set(), // note ids picked on the engraved score; empty = map every note
 };
 
 // ---------- loading ----------
@@ -33,12 +36,15 @@ function setStatus(which, msg, kind = '') {
   el.className = `status ${kind}`;
 }
 
-async function loadScore(getBytes, label, url = null) {
+async function loadScore(getBytes, label, url = null, { selection = [] } = {}) {
   setStatus('score', `Loading ${label}…`);
   try {
     const xml = await bytesToXml(await getBytes());
     state.score = parseMusicXml(xml);
     state.scoreUrl = url;
+    setSelection(new Set(selection));
+    $('engraved').hidden = false;
+    engraver.render(state.score.xml);
     const n = countNotes(state.score);
     setStatus('score', `✓ ${state.score.title}: ${state.score.parts.length} part${state.score.parts.length === 1 ? '' : 's'}, ${n} notes`, 'ok');
     render();
@@ -107,36 +113,23 @@ function hueFor(s) {
 }
 
 function opts() {
+  const { points, bad } = parseThresholds($('opt-split').value);
   return {
     names: $('opt-names').checked,
     rests: $('opt-rests').checked,
     mergeTies: $('opt-ties').checked,
+    coalesce: $('opt-coalesce').checked,
     layout: $('opt-layout').value,
+    selected: state.selected,
+    ranges: rangesFrom(points),
+    badThresholds: bad,
   };
-}
-
-/** Yields resolved events: { notes: [{ note, text, key, name }], rest }. */
-function* resolvedEvents(voice, o) {
-  for (const chord of voice.events) {
-    let notes = chord;
-    if (o.mergeTies) notes = notes.filter((n) => !n.tieStop);
-    if (!notes.length) continue;
-    const rest = notes.every((n) => n.rest);
-    if (rest && !o.rests) continue;
-    yield {
-      rest,
-      grace: notes.every((n) => n.grace),
-      notes: notes.map((note) => {
-        const r = resolve(state.rules, note);
-        return { note, name: noteName(note), text: r.value?.text ?? null, image: r.value?.image ?? null, key: r.key };
-      }),
-    };
-  }
 }
 
 function eventEl(ev, o) {
   const wrap = document.createElement('span');
   wrap.className = 'ev' + (ev.notes.length > 1 ? ' chord' : '') + (ev.rest ? ' rest' : '') + (ev.grace ? ' grace' : '');
+  wrap.dataset.ids = ev.ids.join(' ');
   for (const r of ev.notes) {
     const tok = document.createElement('span');
     tok.className = 'tok' + (r.key == null && !r.note.rest ? ' unmapped' : '');
@@ -152,7 +145,8 @@ function eventEl(ev, o) {
       tok.textContent = shown;
       if (r.key != null && !r.note.rest) tok.style.setProperty('--h', hueFor(shown));
     }
-    tok.title = `${r.text ? `${r.text}: ` : ''}${r.name}${r.note.type ? ` (${r.note.type}${'.'.repeat(r.note.dots)})` : ''} → ${r.key == null ? 'no rule' : `rule "${r.key}"`}`;
+    const why = r.key == null ? 'no rule' : `rule "${r.key}"`;
+    tok.title = `${r.text ? `${r.text}: ` : ''}${r.name}${r.note.type ? ` (${r.note.type}${'.'.repeat(r.note.dots)})` : ''} → ${why}`;
     if (o.names) {
       const small = document.createElement('small');
       small.textContent = r.name;
@@ -175,48 +169,63 @@ function render() {
   $('score-title').textContent = score.title;
   $('score-sub').textContent = [score.composer, `${score.parts.length} part${score.parts.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
 
-  const usage = new Map(); // rule key → { text, count }
+  const sections = buildView(score, state.rules, o);
+  const usage = new Map(); // rule key → count
   let unmapped = 0;
   const root = $('render');
   root.replaceChildren();
   root.className = `layout-${o.layout}`;
+  const split = sections.length > 1;
 
-  for (const part of score.parts) {
-    const sec = document.createElement('section');
-    sec.className = 'part';
-    if (score.parts.length > 1) {
+  for (const { range, noteCount, parts } of sections) {
+    const host = split ? document.createElement('section') : root;
+    if (split) {
+      host.className = 'range';
       const h = document.createElement('h3');
-      h.textContent = part.name;
-      sec.append(h);
+      h.className = 'range-h';
+      h.textContent = `Notes ${range.label}`;
+      const n = document.createElement('span');
+      n.textContent = noteCount ? ` · ${noteCount} note${noteCount === 1 ? '' : 's'}` : ' · no notes';
+      h.append(n);
+      host.append(h);
+      root.append(host);
+      if (!noteCount) continue;
     }
-    const body = document.createElement('div');
-    body.className = 'part-body';
-    for (const m of part.measures) {
-      const mEl = document.createElement('div');
-      mEl.className = 'measure';
-      const num = document.createElement('span');
-      num.className = 'mnum';
-      num.textContent = m.number;
-      mEl.append(num);
-      for (const v of m.voices) {
-        const vEl = document.createElement('div');
-        vEl.className = 'voice';
-        if (m.voices.length > 1) vEl.dataset.voice = `v${v.voice}`;
-        for (const ev of resolvedEvents(v, o)) {
-          for (const r of ev.notes) {
-            if (r.key == null) { if (!r.note.rest) unmapped++; continue; }
-            const u = usage.get(r.key) ?? { count: 0 };
-            u.count++;
-            usage.set(r.key, u);
-          }
-          vEl.append(eventEl(ev, o));
-        }
-        if (vEl.childElementCount) mEl.append(vEl);
+    for (const part of parts) {
+      const sec = document.createElement('section');
+      sec.className = 'part';
+      if (parts.length > 1) {
+        const h = document.createElement('h4');
+        h.textContent = part.name;
+        sec.append(h);
       }
-      body.append(mEl);
+      const body = document.createElement('div');
+      body.className = 'part-body';
+      for (const m of part.measures) {
+        const mEl = document.createElement('div');
+        mEl.className = 'measure';
+        const num = document.createElement('span');
+        num.className = 'mnum';
+        num.textContent = m.number;
+        mEl.append(num);
+        for (const v of m.voices) {
+          const vEl = document.createElement('div');
+          vEl.className = 'voice';
+          if (m.voices.length > 1) vEl.dataset.voice = `v${v.voice}`;
+          for (const ev of v.events) {
+            for (const r of ev.notes) {
+              if (r.key == null) { if (!r.note.rest) unmapped++; continue; }
+              usage.set(r.key, (usage.get(r.key) ?? 0) + 1);
+            }
+            vEl.append(eventEl(ev, o));
+          }
+          if (vEl.childElementCount) mEl.append(vEl);
+        }
+        body.append(mEl);
+      }
+      sec.append(body);
+      host.append(sec);
     }
-    sec.append(body);
-    root.append(sec);
   }
 
   // Legend: rules in the order they appear in the mapping file, with how often each was used.
@@ -238,11 +247,12 @@ function render() {
     } else {
       item.children[1].textContent = text;
     }
-    item.children[2].textContent = u ? `×${u.count}` : 'unused';
+    item.children[2].textContent = u ? `×${u}` : 'unused';
     legend.append(item);
   }
 
   const warns = [...state.mapWarnings];
+  if (o.badThresholds.length) warns.push(`Ignored pitch threshold${o.badThresholds.length === 1 ? '' : 's'} ${o.badThresholds.map((b) => `"${b}"`).join(', ')}: each needs a letter and an octave, like C4 or F#5.`);
   if (unmapped) warns.push(`${unmapped} note${unmapped === 1 ? ' has' : 's have'} no matching rule and ${unmapped === 1 ? 'is' : 'are'} shown by name (highlighted). Add a "*" rule to catch them.`);
   const wEl = $('warnings');
   wEl.hidden = !warns.length;
@@ -253,16 +263,21 @@ function render() {
 function asPlainText() {
   const o = opts();
   const out = [state.score.title, ''];
-  for (const part of state.score.parts) {
-    if (state.score.parts.length > 1) out.push(`## ${part.name}`);
-    const measures = part.measures.map((m) => ({
-      number: m.number,
-      text: m.voices.map((v) => [...resolvedEvents(v, o)]
-        .map((ev) => ev.notes.map((r) => r.text || (r.image ? `[${r.name}]` : r.text ?? r.name)).join('+')).join(' ')).filter(Boolean).join(' / '),
-    }));
-    if (o.layout === 'flow') out.push(measures.map((m) => m.text).filter(Boolean).join(' '));
-    else for (const m of measures) out.push(`${m.number}: ${m.text}`);
-    out.push('');
+  const sections = buildView(state.score, state.rules, o);
+  for (const { range, parts } of sections) {
+    if (sections.length > 1) out.push(`# Notes ${range.label}`, '');
+    for (const part of parts) {
+      if (parts.length > 1) out.push(`## ${part.name}`);
+      const measures = part.measures.map((m) => ({
+        number: m.number,
+        text: m.voices.map((v) => v.events
+          .map((ev) => ev.notes.map((r) => r.text || (r.image ? `[${r.name}]` : r.text ?? r.name)).join('+'))
+          .join(' ')).filter(Boolean).join(' / '),
+      }));
+      if (o.layout === 'flow') out.push(measures.map((m) => m.text).filter(Boolean).join(' '));
+      else for (const m of measures) if (m.text) out.push(`${m.number}: ${m.text}`);
+      out.push('');
+    }
   }
   return out.join('\n');
 }
@@ -341,7 +356,32 @@ $('download-map').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
-for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout']) $(id).addEventListener('change', render);
+for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout', 'opt-coalesce']) $(id).addEventListener('change', render);
+$('opt-split').addEventListener('input', render);
+
+// ---------- engraved score + selection ----------
+
+function setSelection(ids, fromEngraver = false) {
+  state.selected = ids;
+  if (!fromEngraver) engraver.setSelection(ids);
+  const n = ids.size;
+  $('sel-count').textContent = n
+    ? `${n} note${n === 1 ? '' : 's'} selected: only ${n === 1 ? 'it is' : 'these are'} shown below.`
+    : 'No notes selected, so every note is mapped.';
+  $('sel-clear').hidden = !n;
+  render();
+}
+const engraver = mountEngraver($('engraving'), {
+  onSelect: (ids) => setSelection(ids, true),
+  onStatus: (msg, kind) => setStatus('engrave', msg, kind),
+});
+$('sel-clear').addEventListener('click', () => setSelection(new Set()));
+// Hovering a mapped note lights up its source note(s) in the engraving.
+$('render').addEventListener('pointerover', (e) => {
+  const ev = e.target.closest('.ev');
+  engraver.highlight(ev ? ev.dataset.ids.split(' ') : null);
+});
+$('render').addEventListener('pointerleave', () => engraver.highlight(null));
 $('copy-text').addEventListener('click', (e) => copy(asPlainText(), e.currentTarget));
 /** Can the current score + mapping be put in a link? Returns null if yes, else the reason why not. */
 function shareBlocker() {
@@ -366,6 +406,10 @@ function updateShareButton() {
 async function shareUrl() {
   const u = new URL(location.pathname, location.origin);
   const p = new URLSearchParams({ score: state.scoreUrl });
+  const split = $('opt-split').value.trim();
+  if (split) p.set('split', split);
+  if ($('opt-coalesce').checked) p.set('coalesce', '1');
+  if (state.selected.size) p.set('sel', await packText([...state.selected].join(' ')));
   // An unedited mapping that came from a URL is linked by URL; anything else travels inside the link.
   if (state.mapUrl) p.set('map', state.mapUrl);
   else p.set('m', await packText(state.mapText));
@@ -404,10 +448,13 @@ $('load-example').addEventListener('click', () => {
 
 // Share links: ?score=<url> plus either &map=<url> or &m=<packed mapping text>.
 const params = new URLSearchParams(location.search);
+if (params.get('split')) $('opt-split').value = params.get('split');
+if (params.get('coalesce') === '1') $('opt-coalesce').checked = true;
 if (params.get('score')) {
   const s = params.get('score');
   $('score-url').value = s;
-  loadScore(() => fetchBytes(s), s, s);
+  const selection = params.get('sel') ? (await unpackText(params.get('sel')).catch(() => '')).split(' ').filter(Boolean) : [];
+  loadScore(() => fetchBytes(s), s, s, { selection });
 }
 if (params.get('m')) {
   loadMap(() => unpackText(params.get('m')), 'shared mapping', null, { persist: false });

@@ -10,7 +10,7 @@
 <body>
   <header>
     <h1>Note Visualizer</h1>
-    <p class="lede">Load a MusicXML score and a mapping file, and every note is replaced by the word you've mapped it to. Everything runs in your browser; nothing is uploaded anywhere.</p>
+    <p class="lede">Load a MusicXML score and a mapping, and every note is replaced by the word or picture you've mapped it to. Everything runs in your browser; nothing is uploaded anywhere.</p>
   </header>
 
   <main>
@@ -62,6 +62,15 @@
 
     <p class="examples">No files handy? <button type="button" class="link" id="load-example">Load the example</button> (<i>Twinkle, Twinkle</i> with a food mapping).</p>
 
+    <section id="engraved" class="engraved" hidden>
+      <div class="sel-bar">
+        <p class="hint"><b>Select notes</b> by clicking them, or by dragging a box around several. <span id="sel-count"></span></p>
+        <button type="button" class="secondary" id="sel-clear" hidden>Clear selection</button>
+      </div>
+      <div id="engraving" class="engraving" aria-label="Engraved score"></div>
+      <p class="status" id="engrave-status" aria-live="polite"></p>
+    </section>
+
     <section id="output" hidden>
       <div class="toolbar">
         <div class="score-meta">
@@ -72,6 +81,8 @@
           <label><input type="checkbox" id="opt-names"> Show note names</label>
           <label><input type="checkbox" id="opt-rests" checked> Show rests</label>
           <label><input type="checkbox" id="opt-ties"> Merge tied notes</label>
+          <label title="Show 2 or more repeated notes of the same pitch in a row as one"><input type="checkbox" id="opt-coalesce"> Coalesce repeated notes</label>
+          <label>Split at pitches <input type="text" id="opt-split" placeholder="e.g. C4, G5" size="10" autocomplete="off" spellcheck="false"></label>
           <label>Layout
             <select id="opt-layout">
               <option value="measures">By measure</option>
@@ -107,6 +118,10 @@ A = ![apple](https://example.com/apple.png)
       <p>Pictures you upload in the rule editor are shrunk and stored inside the mapping itself (as <code>data:</code> URLs), so a downloaded mapping file carries its pictures with it. Your current mapping is also remembered in this browser between visits.</p>
       <p>Each note is matched from the most specific rule to the least: the exact spelling with its octave (<code>F#4</code>), the spelling alone (<code>F#</code>), the enharmonic equivalent (<code>Gb4</code>, then <code>Gb</code>), and finally <code>*</code>. A note that matches nothing shows its own name, highlighted.</p>
       <p>Loading from a URL only works when the server allows cross-origin requests (CORS). GitHub raw links (<code>raw.githubusercontent.com</code>) and Gists work. If a URL won't load, download the file and choose it instead.</p>
+      <h2>Selecting, splitting and coalescing</h2>
+      <p><b>Selection:</b> click notes on the engraved score to select them, or drag a box over several. While anything is selected, the mapped view shows only the selected notes. Clear the selection to see every note again. Hover a mapped note to see where it is in the score.</p>
+      <p><b>Split at pitches:</b> enter one or more pitches with octaves, like <code>C4, G5</code>. The mapped view is then divided into one section per range (below C4; C4 up to but not including G5; G5 and above), and each section holds only the notes in its range. Middle C is C4.</p>
+      <p><b>Coalesce repeated notes:</b> two or more notes of the same pitch in a row (in the same voice) are shown as one. For chords, the whole chord has to repeat. A rest between two notes breaks the run while rests are shown.</p>
       <h2>Sharing</h2>
       <p><b>Copy share link</b> works when the score was loaded from a URL and the mapping uses only text and picture <em>URLs</em>. Uploaded pictures are too big to fit in a link. A mapping built or edited on the page travels compressed inside the link, so nothing else needs hosting. Opening a shared link doesn't replace your own saved mapping unless you edit what you were sent.</p>
       <p>Hand-made links work too: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>
@@ -114,7 +129,7 @@ A = ![apple](https://example.com/apple.png)
   </main>
 
   <footer>
-    <p>Part of the visualizers project. Supports MusicXML partwise and timewise scores.</p>
+    <p>Part of the visualizers project. Supports MusicXML partwise and timewise scores. Engraving by <a href="https://www.verovio.org/">Verovio</a>.</p>
   </footer>
 
   <script type="module" src="src/app.js"></script>

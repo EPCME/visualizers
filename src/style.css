@@ -189,3 +189,29 @@ button.link.danger { color: var(--err); font-size: .85rem; margin-left: auto; }
 
 .share-hint { margin: -4px 0 12px; font-size: .85rem; color: var(--muted); text-align: right; }
 button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+
+/* ---- engraved score ---- */
+.engraved { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.sel-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; }
+.sel-bar .hint { margin: 0; flex: 1 1 20rem; }
+.sel-bar label { font-size: .9rem; display: inline-flex; gap: .35em; align-items: center; }
+.sel-bar label[hidden], #sel-clear[hidden] { display: none; }
+#sel-count { color: var(--ink); }
+.engraving {
+  position: relative; background: #fff; color: #000; border-radius: 8px; overflow-x: auto;
+  user-select: none; -webkit-user-select: none; min-height: 3rem; cursor: crosshair;
+}
+.engraving .pages > svg { display: block; width: 100%; height: auto; }
+.engraving g.note { cursor: pointer; }
+.engraving g.note:hover { color: #2f5d8a; fill: #2f5d8a; }
+.engraving g.note.sel, .engraving g.note.sel * { fill: #c2410c; stroke: #c2410c; color: #c2410c; }
+.engraving g.note.hl, .engraving g.note.hl * { fill: #2563eb; stroke: #2563eb; color: #2563eb; }
+.engraving .band { position: absolute; border: 1.5px solid #2f5d8a; background: rgba(47, 93, 138, .12); pointer-events: none; }
+
+/* selection + splitting in the mapped view */
+.range + .range { margin-top: 1.25rem; padding-top: .5rem; border-top: 2px solid var(--line); }
+.range-h { margin: .25rem 0 .5rem; font-size: 1rem; }
+.range-h span { color: var(--muted); font-weight: normal; font-size: .9rem; }
+.part h4 { margin: .75rem 0 .4rem; font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+#opt-split { font: inherit; font-size: .9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: .2em .4em; width: 8em; }
+.ev[data-ids] { cursor: default; }

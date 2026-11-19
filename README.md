@@ -9,6 +9,10 @@ It's a static, client-side-only app. There's no build step and no server. Files 
 1. Load a score: a `.musicxml`, `.xml` or compressed `.mxl` file, either by choosing a file or by pasting a URL.
 2. Build the mapping on the page: one row per rule, each replacing a note with **text or a picture**. A picture can be uploaded or linked by URL. You can also load a mapping file, or edit the mapping as text. Your mapping is remembered in the browser, and **Download mapping** saves it as a file.
 3. Read the result by measure or as continuous text. You can also copy it as plain text.
+4. Optionally:
+   - **Select notes** on the engraved score (rendered by [Verovio](https://www.verovio.org/)) by clicking them or dragging a box. While a selection exists, only the selected notes are shown in the mapped view.
+   - **Split at pitches**: enter thresholds such as `C4, G5` to divide the mapped view into one section per pitch range ([lo, hi)).
+   - **Coalesce repeated notes**: 2+ adjacent notes of the same pitch in a voice are shown as one.
 
 Preload both files with `?score=<url>&map=<url>`. The app needs CORS-friendly URLs, such as `raw.githubusercontent.com` or Gists.
 
@@ -39,5 +43,7 @@ Serve the folder with any static server, for example `python3 -m http.server`, a
 
 - `src/musicxml.js`: MusicXML and `.mxl` parsing (DOMParser plus a tiny zip reader using `DecompressionStream`)
 - `src/mapping.js`: mapping-file parsing and note resolution
+- `src/view.js`: selection filtering, pitch-range sections, coalescing
+- `src/engrave.js`: Verovio engraving (CDN, pinned 6.3.0) and note selection
 - `src/editor.js`: on-page rule editor (rows ↔ mapping text)
 - `src/app.js`: UI
