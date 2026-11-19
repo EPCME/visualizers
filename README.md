@@ -68,3 +68,4 @@ Serve the folder with any static server, for example `python3 -m http.server`, a
 15. https://openclipart.org/detail/17566/cartoon-owl
 16. https://openclipart.org/detail/17814/cartoon-beaver
 17. https://openclipart.org/detail/17810/cartoon-elephant
+18. https://openclipart.org/detail/17692/cartoon-dog
