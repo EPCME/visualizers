@@ -52,8 +52,13 @@ export function formatValue({ text, image }) {
   return /^\s|\s$|^["']|^!\[|^(img|image|picture):|\s\/\//i.test(text) ? `"${text}"` : text;
 }
 
-/** Parse mapping file text. Returns { rules: Map<key,{text,image}>, entries, warnings }. */
-export function parseMapping(text) {
+const NOT_A_NOTE = (k) => `"${k}" isn't a note name (try G, F#, Bb4, rest or *)`;
+
+/**
+ * Parse mapping file text. Returns { rules: Map<key,{text,image}>, entries, warnings }.
+ * Pitch keys by default; pass another `normalise` (and `invalid` message) for other kinds of key, like durations.
+ */
+export function parseMapping(text, { normalise = normaliseKey, invalid = NOT_A_NOTE } = {}) {
   const rules = new Map();
   const warnings = [];
   const trimmed = text.trim();
@@ -85,10 +90,10 @@ export function parseMapping(text) {
   const parsed = [];
   for (const [k, raw, where] of entries) {
     const v = parseValue(raw);
-    const key = normaliseKey(k);
+    const key = normalise(k);
     parsed.push({ rawKey: String(k).trim(), key, value: v });
     if (!key) {
-      warnings.push(`${where}: "${k}" isn't a note name (try G, F#, Bb4, rest or *)`);
+      warnings.push(`${where}: ${invalid(k)}`);
       continue;
     }
     if (rules.has(key)) warnings.push(`${where}: "${k}" is defined more than once; the last one wins`);
@@ -117,7 +122,7 @@ export function resolve(allRules, note) {
   // Rules with no text and no picture (e.g. a half-filled editor row) don't match anything yet.
   const rules = new Map([...allRules].filter(([, v]) => v.text || v.image));
   if (note.rest) {
-    if (rules.has('REST')) return { value: rules.get('REST'), key: 'rest' };
+    if (rules.has('REST')) return { value: rules.get('REST'), key: 'REST' };
     if (rules.has('*')) return { value: rules.get('*'), key: '*' };
     return { value: null, key: null };
   }

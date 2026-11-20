@@ -1,7 +1,9 @@
 // Turns a parsed score + mapping + options into what the mapped view shows:
-// selection filtering, pitch-range sections, tie merging, and coalescing of repeated notes.
+// selection filtering, pitch-range sections, tie merging, and coalescing of repeats. What each event shows
+// comes from the rendering's kind (kinds.js).
 
-import { resolve, noteName, normaliseKey } from './mapping.js';
+import { normaliseKey } from './mapping.js';
+import { MELODIC } from './kinds.js';
 import { midiOf } from './musicxml.js';
 
 /** Parse "C4, G5" into sorted thresholds. Each needs an octave. Returns { points: [{ midi, label }], bad: [] }. */
@@ -67,14 +69,15 @@ export function voiceSections(score) {
 }
 
 /**
- * Build the view.
+ * Build the view for one rendering.
  * o: { rests, mergeTies, coalesce, sections, selected: Set<id> } (a non-empty selection limits the view to those notes)
+ * kind: what each event shows and how repeats are recognised (see kinds.js); the melodic one by default.
  * A section keeps notes in its pitch range [lo, hi) and, when it names a voice, only that voice's notes.
  * Returns [{ section, noteCount, parts: [{ name, eventCount, measures: [{ number, voices: [{ voice, events }] }] }] }]
- * where each event is { notes: [r], rest, grace, count, ids } and r is
- * { note, name, text, image, key }.
+ * where each event is { notes: [token], rest, grace, count, ids } and a token is
+ * { note, name, detail, text, image, key }.
  */
-export function buildView(score, rules, o) {
+export function buildView(score, rules, o, kind = MELODIC) {
   const selecting = o.selected.size > 0;
   return o.sections.map((range) => {
     let noteCount = 0;
@@ -101,14 +104,11 @@ export function buildView(score, rules, o) {
             if (rest && (!o.rests || selecting)) continue; // a selection shows only the selected notes
             if (!rest) notes = notes.filter((n) => !n.rest);
 
-            const resolved = notes.map((note) => {
-              const r = resolve(rules, note);
-              return { note, name: noteName(note), text: r.value?.text ?? null, image: r.value?.image ?? null, key: r.key };
-            });
-            const ev = { notes: resolved, rest, grace: notes.every((n) => n.grace), count: 1, ids: notes.map((n) => n.id) };
+            const tokens = kind.tokens(notes, rules, o);
+            const ev = { notes: tokens, rest, grace: notes.every((n) => n.grace), count: 1, ids: notes.map((n) => n.id) };
 
-            // Coalesce: same pitches as the previous shown event in this voice.
-            const sig = rest ? null : resolved.map((r) => r.note.midi).sort((a, b) => a - b).join(',');
+            // Coalesce: the same thing (pitches, or duration) as the previous shown event in this voice.
+            const sig = kind.sig(tokens);
             const prev = last.get(vKey);
             if (o.coalesce && sig != null && prev && prev.sig === sig) {
               prev.ev.count++;
@@ -121,7 +121,7 @@ export function buildView(score, rules, o) {
             if (!out.has(vKey)) out.set(vKey, { voice: v.voice, events: [] });
             out.get(vKey).events.push(ev);
             eventCount++;
-            if (!rest) noteCount += resolved.length;
+            if (!rest) noteCount += notes.length;
           }
         }
       });

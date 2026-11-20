@@ -10,7 +10,7 @@
 <body>
   <header>
     <h1>Note Visualizer</h1>
-    <p class="lede">Load a MusicXML score and a mapping, and every note is replaced by the word or picture you've mapped it to. Everything runs in your browser; nothing is uploaded anywhere.</p>
+    <p class="lede">Load a MusicXML score and a mapping, and every note is replaced by the word or picture you've mapped its pitch or its duration to. Everything runs in your browser; nothing is uploaded anywhere.</p>
   </header>
 
   <main>
@@ -28,48 +28,9 @@
         </form>
         <p class="status" id="score-status" aria-live="polite"></p>
       </div>
-
-      <div class="panel" id="map-panel">
-        <h2><span class="num">2</span> Mapping</h2>
-        <p class="hint">Build the rules below, or load a mapping file. <a href="#help">Format help</a></p>
-
-        <label class="preset-row">Start from a preset
-          <select id="map-preset">
-            <option value="">Choose…</option>
-            <option value="examples/foods.txt">Foods (C = cheese, D = dumpling…)</option>
-            <option value="examples/animals.txt">Animal pictures</option>
-            <option value="examples/solfege-d-major.txt">Solfège, D major (D = Do)</option>
-          </select>
-        </label>
-
-        <div id="rules" class="rules" aria-label="Mapping rules"></div>
-        <div class="rule-actions">
-          <button type="button" class="secondary" id="add-rule">+ Add rule</button>
-          <button type="button" class="secondary" id="starter-rules" title="Adds a rule for each of C D E F G A B">+ C–B starter set</button>
-          <button type="button" class="secondary" id="download-map">Download mapping</button>
-          <button type="button" class="link danger" id="clear-rules">Clear all</button>
-        </div>
-
-        <details id="map-load">
-          <summary>Load a mapping file</summary>
-          <label class="drop" data-target="map">
-            <input type="file" id="map-file" accept=".txt,.json,.map,text/plain,application/json">
-            <span>Choose a file or drop it here</span>
-          </label>
-          <form class="url-row" id="map-url-form">
-            <input type="url" id="map-url" placeholder="…or paste a URL to a mapping file">
-            <button type="submit">Load</button>
-          </form>
-        </details>
-        <details id="map-edit">
-          <summary>Edit as text</summary>
-          <textarea id="map-text" spellcheck="false" rows="10" aria-label="Mapping text"></textarea>
-        </details>
-        <p class="status" id="map-status" aria-live="polite"></p>
-      </div>
     </section>
 
-    <p class="examples">No files handy? <button type="button" class="link" id="load-example">Load the example</button> (<i>Twinkle, Twinkle</i> with a food mapping).</p>
+    <p class="examples">No files handy? <button type="button" class="link" id="load-example">Load the example</button> (<i>Twinkle, Twinkle</i> with foods for the pitches and Kodály syllables for the rhythm).</p>
 
     <section id="engraved" class="engraved" hidden>
       <div class="sel-bar">
@@ -81,12 +42,14 @@
       <p class="status" id="engrave-status" aria-live="polite"></p>
     </section>
 
-    <section id="output" hidden>
-      <div class="toolbar">
-        <div class="score-meta">
-          <h2 id="score-title"></h2>
-          <p id="score-sub"></p>
-        </div>
+    <section class="inputs settings">
+      <div class="panel" id="map-panel">
+        <h2><span class="num">2</span> Mappings</h2>
+        <div class="tabs" role="tablist" aria-label="Mappings" id="map-tabs"></div>
+        <div id="map-bodies"></div>
+      </div>
+      <div class="panel options" id="options-panel">
+        <h2><span class="num">3</span> Options</h2>
         <div class="controls">
           <label><input type="checkbox" id="opt-names"> Show note names</label>
           <label><input type="checkbox" id="opt-rests" checked> Show rests</label>
@@ -106,7 +69,7 @@
               <option value="flow">Continuous text</option>
             </select>
           </label>
-          <label title="Every section and part uses the same columns, so a measure is in the same place in each">Measures per line
+          <label title="Every section and part uses the same columns, so a measure is in the same place in each. Columns are never so narrow that a measure's notes wrap, so you may get fewer than you pick.">Measures per line
             <select id="opt-perline">
               <option value="">Auto</option>
               <option>2</option>
@@ -116,15 +79,71 @@
               <option>8</option>
             </select>
           </label>
-          <button type="button" id="copy-text">Copy as text</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="output" hidden>
+      <div class="toolbar">
+        <div class="score-meta">
+          <h2 id="score-title"></h2>
+          <p id="score-sub"></p>
+        </div>
+        <div class="controls">
           <button type="button" id="share-link">Copy share link</button>
         </div>
       </div>
       <p id="share-hint" class="share-hint" hidden></p>
       <div id="warnings" class="warnings" hidden></div>
-      <div id="legend" class="legend"></div>
-      <div id="render"></div>
+      <div id="renderings"></div>
     </section>
+
+    <!-- One per rendering (see src/kinds.js): its mapping editor, and its output. -->
+    <template id="map-template">
+      <div class="map-body" role="tabpanel">
+        <p class="hint"><span class="m-hint"></span> Build the rules below, or load a mapping file. <a href="#help">Format help</a></p>
+        <label class="preset-row">Start from a preset
+          <select class="m-preset">
+            <option value="">Choose…</option>
+          </select>
+        </label>
+        <div class="rules" aria-label="Mapping rules"></div>
+        <div class="rule-actions">
+          <button type="button" class="secondary m-add">+ Add rule</button>
+          <button type="button" class="secondary m-starter"></button>
+          <button type="button" class="secondary m-download">Download mapping</button>
+          <button type="button" class="link danger m-clear">Clear all</button>
+        </div>
+        <details class="m-load">
+          <summary>Load a mapping file</summary>
+          <label class="drop" data-target="map">
+            <input type="file" class="m-file" accept=".txt,.json,.map,text/plain,application/json">
+            <span>Choose a file or drop it here</span>
+          </label>
+          <form class="url-row m-url-form">
+            <input type="url" class="m-url" placeholder="…or paste a URL to a mapping file" aria-label="Mapping file URL">
+            <button type="submit">Load</button>
+          </form>
+        </details>
+        <details class="m-edit">
+          <summary>Edit as text</summary>
+          <textarea class="m-text" spellcheck="false" rows="10" aria-label="Mapping text"></textarea>
+        </details>
+        <p class="status m-status" aria-live="polite"></p>
+      </div>
+    </template>
+    <template id="rendering-template">
+      <article class="rendering">
+        <div class="r-head">
+          <h3 class="r-title"></h3>
+          <button type="button" class="secondary r-copy">Copy as text</button>
+        </div>
+        <p class="r-empty" hidden><span class="r-empty-msg"></span> <button type="button" class="link r-open"></button></p>
+        <div class="warnings r-warnings" hidden></div>
+        <div class="legend r-legend"></div>
+        <div class="r-render"></div>
+      </article>
+    </template>
 
     <section id="help" class="help">
       <h2>Mapping file format</h2>
@@ -145,12 +164,25 @@ A = ![apple](https://example.com/apple.png)
       <p>Pictures you upload in the rule editor are shrunk and stored inside the mapping itself (as <code>data:</code> URLs), so a downloaded mapping file carries its pictures with it. Your current mapping is also remembered in this browser between visits.</p>
       <p>Each note is matched from the most specific rule to the least: the exact spelling with its octave (<code>F#4</code>), the spelling alone (<code>F#</code>), the enharmonic equivalent (<code>Gb4</code>, then <code>Gb</code>), and finally <code>*</code>. A note that matches nothing shows its own name, highlighted.</p>
       <p>Loading from a URL only works when the server allows cross-origin requests (CORS). GitHub raw links (<code>raw.githubusercontent.com</code>) and Gists work. If a URL won't load, download the file and choose it instead.</p>
+      <h2>Rhythm mapping format</h2>
+      <p>The <b>Rhythmic</b> mapping works the same way, but its keys are durations, so the <i>Extracted Rhythmic Pattern</i> shows each note's length instead of its pitch. A chord is one rhythmic event and shows once.</p>
+<pre># any quarter note
+quarter = ta
+# dotted notes (also: quarter. or "double dotted")
+dotted quarter = ta-i
+eighth = ti
+16th = ri
+# one kind of rest, or every rest
+quarter rest = (sh)
+rest = (rest)
+* = ?</pre>
+      <p>Durations: <code>breve</code>, <code>whole</code>, <code>half</code>, <code>quarter</code>, <code>eighth</code>, <code>16th</code>, <code>32nd</code>, <code>64th</code>. British names (<code>crotchet</code>, <code>quaver</code>…) and fractions (<code>1/4</code>, <code>1/8</code>) work too. A note is matched from its exact duration with dots (<code>dotted quarter</code>), to the same duration without dots (<code>quarter</code>), then, for rests, <code>rest</code>, and finally <code>*</code>. With <i>Merge tied notes</i> on, a tied chain counts as its total length (a half tied to a quarter is a <code>dotted half</code>). Triplets and other tuplets go by their written duration.</p>
       <h2>Selecting, splitting and coalescing</h2>
       <p><b>Selection:</b> click notes on the engraved score to select them, or drag a box over several. While anything is selected, the mapped view shows only the selected notes. Clear the selection to see every note again. Hover a mapped note to see where it is in the score.</p>
       <p><b>Split at pitches:</b> enter one or more pitches with octaves, like <code>C4, G5</code>. The mapped view is then divided into one section per range (below C4; C4 up to but not including G5; G5 and above), and each section holds only the notes in its range. Middle C is C4.</p>
-      <p><b>Coalesce repeated notes:</b> two or more notes of the same pitch in a row (in the same voice) are shown as one. For chords, the whole chord has to repeat. A rest between two notes breaks the run while rests are shown.</p>
+      <p><b>Coalesce repeated notes:</b> two or more notes of the same pitch in a row (in the same voice) are shown as one. For chords, the whole chord has to repeat. A rest between two notes breaks the run while rests are shown. In the rhythmic pattern, it is the duration that has to repeat.</p>
       <h2>Sharing</h2>
-      <p><b>Copy share link</b> works when the score was loaded from a URL and the mapping uses only text and picture <em>URLs</em>. Uploaded pictures are too big to fit in a link. A mapping built or edited on the page travels compressed inside the link, so nothing else needs hosting. Opening a shared link doesn't replace your own saved mapping unless you edit what you were sent.</p>
+      <p><b>Copy share link</b> works when the score was loaded from a URL and the mappings use only text and picture <em>URLs</em>. Uploaded pictures are too big to fit in a link. A mapping built or edited on the page travels compressed inside the link, so nothing else needs hosting. Opening a shared link doesn't replace your own saved mapping unless you edit what you were sent.</p>
       <p>Hand-made links work too: <code>?score=&lt;url&gt;&amp;map=&lt;url&gt;</code>.</p>
     </section>
   </main>
