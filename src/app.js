@@ -3,19 +3,22 @@ import { parseMapping } from './mapping.js';
 import { buildView, parseThresholds, rangesFrom, voiceSections, WHOLE } from './view.js';
 import { mountEngraver } from './engrave.js';
 import { packText, unpackText } from './share.js';
-import { mountEditor, rowsToText, rowsFromEntries, STARTER_KEYS } from './editor.js';
+import { mountEditor, rowsToText, rowsFromEntries } from './editor.js';
+import { KINDS } from './kinds.js';
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
   score: null,     // parsed score
   scoreUrl: null,  // set when the score came from a URL (for share links)
-  mapText: '',
-  mapUrl: null,
-  rules: null,
-  mapWarnings: [],
   selected: new Set(), // note ids picked on the engraved score; empty = map every note
 };
+
+/**
+ * One per kind (see kinds.js), in page order. Each has its own mapping and output:
+ * { kind, mapText, mapUrl, rules, mapWarnings, editor, el: {…mapping UI}, out: {…output UI} }
+ */
+const renderings = [];
 
 // ---------- loading ----------
 
@@ -29,9 +32,11 @@ async function fetchBytes(url) {
   if (!res.ok) throw new Error(`The server answered ${res.status} ${res.statusText}.`);
   return res.arrayBuffer();
 }
+const fetchText = async (url) => new TextDecoder().decode(await fetchBytes(url));
 
-function setStatus(which, msg, kind = '') {
-  const el = $(`${which}-status`);
+/** `where` is a status element, or a name like 'score' for #score-status. */
+function setStatus(where, msg, kind = '') {
+  const el = typeof where === 'string' ? $(`${where}-status`) : where;
   el.textContent = msg;
   el.className = `status ${kind}`;
 }
@@ -54,46 +59,46 @@ async function loadScore(getBytes, label, url = null, { selection = [] } = {}) {
   }
 }
 
-async function loadMap(getText, label, url = null, opts = {}) {
-  setStatus('map', `Loading ${label}…`);
+async function loadMap(r, getText, label, url = null, opts = {}) {
+  setStatus(r.el.status, `Loading ${label}…`);
   try {
-    setMapText(await getText(), 'external', opts);
-    state.mapUrl = url;
+    setMapText(r, await getText(), 'external', opts);
+    r.mapUrl = url;
+    updateShareButton();
   } catch (e) {
-    setStatus('map', e.message, 'error');
+    setStatus(r.el.status, e.message, 'error');
   }
 }
 
-const STORE_KEY = 'visualizers.mapping';
-function remember(text) {
-  try { localStorage.setItem(STORE_KEY, text); } catch { /* storage unavailable or full: fine */ }
+function remember(key, text) {
+  try { localStorage.setItem(key, text); } catch { /* storage unavailable or full: fine */ }
 }
-function recall() {
-  try { return localStorage.getItem(STORE_KEY); } catch { return null; }
+function recall(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 /**
- * The mapping text is the source of truth. `source` says who changed it, so the other views update:
+ * A rendering's mapping text is the source of truth. `source` says who changed it, so the other views update:
  * 'editor' (rule rows), 'textarea' (Edit as text), or 'external' (file, URL, storage, example).
  * `persist: false` (used for share links) keeps the visitor's own saved mapping until they edit.
  */
-function setMapText(text, source = 'external', { persist = true } = {}) {
-  state.mapText = text;
-  if (source !== 'textarea') $('map-text').value = text;
-  if (source !== 'editor') state.mapUrl = null;
-  if (persist) remember(text);
+function setMapText(r, text, source = 'external', { persist = true } = {}) {
+  r.mapText = text;
+  if (source !== 'textarea') r.el.text.value = text;
+  if (source !== 'editor') r.mapUrl = null;
+  if (persist) remember(r.kind.storeKey, text);
   try {
-    const { rules, entries, warnings } = parseMapping(text);
-    if (source !== 'editor') editor.setRows(rowsFromEntries(entries));
+    const { rules, entries, warnings } = parseMapping(text, { normalise: r.kind.normalise, invalid: r.kind.invalid });
+    if (source !== 'editor') r.editor.setRows(rowsFromEntries(entries));
     const empty = rules.size === 0 && !text.trim();
-    state.rules = rules;
-    state.mapWarnings = empty ? [] : warnings;
-    if (empty) setStatus('map', 'No rules yet.');
-    else setStatus('map', `✓ ${rules.size} rule${rules.size === 1 ? '' : 's'}${warnings.length ? `, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`, warnings.length ? 'warn' : 'ok');
+    r.rules = rules;
+    r.mapWarnings = empty ? [] : warnings;
+    if (empty) setStatus(r.el.status, 'No rules yet.');
+    else setStatus(r.el.status, `✓ ${rules.size} rule${rules.size === 1 ? '' : 's'}${warnings.length ? `, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`, warnings.length ? 'warn' : 'ok');
   } catch (e) {
-    state.rules = null;
-    state.mapWarnings = [];
-    setStatus('map', e.message, 'error');
+    r.rules = null;
+    r.mapWarnings = [];
+    setStatus(r.el.status, e.message, 'error');
   }
   render();
 }
@@ -129,7 +134,7 @@ function opts() {
   };
 }
 
-function eventEl(ev, o) {
+function eventEl(ev, o, kind) {
   const wrap = document.createElement('span');
   wrap.className = 'ev' + (ev.notes.length > 1 ? ' chord' : '') + (ev.rest ? ' rest' : '') + (ev.grace ? ' grace' : '');
   wrap.dataset.ids = ev.ids.join(' ');
@@ -148,8 +153,8 @@ function eventEl(ev, o) {
       tok.textContent = shown;
       if (r.key != null && !r.note.rest) tok.style.setProperty('--h', hueFor(shown));
     }
-    const why = r.key == null ? 'no rule' : `rule "${r.key}"`;
-    tok.title = `${r.text ? `${r.text}: ` : ''}${r.name}${r.note.type ? ` (${r.note.type}${'.'.repeat(r.note.dots)})` : ''} → ${why}`;
+    const why = r.key == null ? 'no rule' : `rule "${kind.keyLabel(r.key)}"`;
+    tok.title = `${r.text ? `${r.text}: ` : ''}${r.detail} → ${why}`;
     if (o.names) {
       const small = document.createElement('small');
       small.textContent = r.name;
@@ -160,10 +165,23 @@ function eventEl(ev, o) {
   return wrap;
 }
 
-/** Grid columns for the "By measure" layout. Every part in every section shares them, so measure N lines up. */
+/** Grid columns for the "By measure" layout. Every part in every section and rendering shares them, so measure N lines up. */
 function perLine() {
   const n = Number($('opt-perline').value);
-  return n ? `repeat(${n}, minmax(0, 1fr))` : 'repeat(auto-fill, minmax(9rem, 1fr))';
+  // --m-min is the widest measure's unwrapped width (see fitMeasures). Columns never get narrower than that,
+  // so a measure's notes stay on one line; a whole measure wraps to the next row instead. A chosen count is a
+  // maximum: fewer columns are used when that many wouldn't fit. min(…, 100%) keeps one huge measure on screen.
+  const floor = n ? `max(var(--m-min, 0px), calc(100% / ${n} - 1px))` : 'max(var(--m-min, 0px), 9rem)';
+  return `repeat(auto-fill, minmax(min(${floor}, 100%), 1fr))`;
+}
+
+/** Measure every measure's width with its notes on one line, and publish the widest as --m-min. */
+function fitMeasures(root) {
+  root.classList.add('measuring');
+  let w = 0;
+  for (const m of root.querySelectorAll('.layout-measures .measure')) w = Math.max(w, m.getBoundingClientRect().width);
+  root.classList.remove('measuring');
+  root.style.setProperty('--m-min', `${Math.ceil(w)}px`);
 }
 
 /** Offer "By voice" only when the score has voices to split; show the pitch box only when splitting at pitches. */
@@ -179,7 +197,7 @@ function syncSplitControls() {
 
 function render() {
   const out = $('output');
-  if (!state.score || !state.rules) {
+  if (!state.score) {
     out.hidden = true;
     return;
   }
@@ -188,17 +206,46 @@ function render() {
   const { score } = state;
   $('score-title').textContent = score.title;
   $('score-sub').textContent = [score.composer, `${score.parts.length} part${score.parts.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+  $('opt-perline').disabled = o.layout === 'flow';
 
-  const sections = buildView(score, state.rules, o);
+  const all = $('renderings');
+  all.style.setProperty('--per-line', perLine());
+  for (const r of renderings) renderOne(r, o);
+  fitMeasures(all); // after every rendering is drawn, so their measures share one column width
+
+  const warns = [];
+  if (o.badThresholds.length) warns.push(`Ignored pitch threshold${o.badThresholds.length === 1 ? '' : 's'} ${o.badThresholds.map((b) => `"${b}"`).join(', ')}: each needs a letter and an octave, like C4 or F#5.`);
+  showWarnings($('warnings'), warns);
+  updateShareButton();
+}
+
+function showWarnings(el, warns) {
+  el.hidden = !warns.length;
+  el.replaceChildren(...warns.map((w) => Object.assign(document.createElement('p'), { textContent: w })));
+}
+
+function renderOne(r, o) {
+  const { kind } = r;
+  const { render: root, legend, warnings, empty } = r.out;
+  const ready = !!r.rules?.size;
+  empty.hidden = ready;
+  if (!ready) {
+    empty.querySelector('.r-empty-msg').textContent = r.rules
+      ? `No rules in the ${kind.tab} mapping yet.`
+      : `The ${kind.tab} mapping couldn't be read.`;
+    root.replaceChildren();
+    legend.replaceChildren();
+    showWarnings(warnings, []);
+    return;
+  }
+
+  const sections = buildView(state.score, r.rules, o, kind);
   const usage = new Map(); // rule key → count
   let unmapped = 0;
-  const root = $('render');
   root.replaceChildren();
-  root.className = `layout-${o.layout}`;
+  root.className = `r-render layout-${o.layout}`;
   const split = sections.length > 1;
 
-  root.style.setProperty('--per-line', perLine());
-  $('opt-perline').disabled = o.layout === 'flow';
   for (const { section, noteCount, parts } of sections) {
     const host = split ? document.createElement('section') : root;
     if (split) {
@@ -236,11 +283,11 @@ function render() {
           vEl.className = 'voice';
           if (m.voices.length > 1) vEl.dataset.voice = `v${v.voice}`;
           for (const ev of v.events) {
-            for (const r of ev.notes) {
-              if (r.key == null) { if (!r.note.rest) unmapped++; continue; }
-              usage.set(r.key, (usage.get(r.key) ?? 0) + 1);
+            for (const t of ev.notes) {
+              if (t.key == null) { if (!t.note.rest) unmapped++; continue; }
+              usage.set(t.key, (usage.get(t.key) ?? 0) + 1);
             }
-            vEl.append(eventEl(ev, o));
+            vEl.append(eventEl(ev, o, kind));
           }
           if (vEl.childElementCount) mEl.append(vEl);
         }
@@ -252,11 +299,10 @@ function render() {
   }
 
   // Legend: rules in the order they appear in the mapping file, with how often each was used.
-  const legend = $('legend');
   legend.replaceChildren();
-  for (const [key, { text, image }] of state.rules) {
-    const k = key === 'REST' ? 'rest' : key;
-    const u = usage.get(k);
+  for (const [key, { text, image }] of r.rules) {
+    const k = kind.keyLabel(key);
+    const u = usage.get(key);
     const item = document.createElement('span');
     item.className = 'leg' + (u ? '' : ' unused');
     if (k !== 'rest' && !image) item.style.setProperty('--h', hueFor(text));
@@ -274,19 +320,15 @@ function render() {
     legend.append(item);
   }
 
-  const warns = [...state.mapWarnings];
-  if (o.badThresholds.length) warns.push(`Ignored pitch threshold${o.badThresholds.length === 1 ? '' : 's'} ${o.badThresholds.map((b) => `"${b}"`).join(', ')}: each needs a letter and an octave, like C4 or F#5.`);
-  if (unmapped) warns.push(`${unmapped} note${unmapped === 1 ? ' has' : 's have'} no matching rule and ${unmapped === 1 ? 'is' : 'are'} shown by name (highlighted). Add a "*" rule to catch them.`);
-  const wEl = $('warnings');
-  wEl.hidden = !warns.length;
-  wEl.replaceChildren(...warns.map((w) => Object.assign(document.createElement('p'), { textContent: w })));
-  updateShareButton();
+  const warns = [...r.mapWarnings];
+  if (unmapped) warns.push(`No rule matches ${unmapped} of these, so ${unmapped === 1 ? 'it is' : 'they are'} shown by name (highlighted). Add a "*" rule to catch them.`);
+  showWarnings(warnings, warns);
 }
 
-function asPlainText() {
+function asPlainText(r) {
   const o = opts();
-  const out = [state.score.title, ''];
-  const sections = buildView(state.score, state.rules, o);
+  const out = [`${state.score.title}: ${r.kind.title}`, ''];
+  const sections = buildView(state.score, r.rules, o, r.kind);
   for (const { section, parts } of sections) {
     if (sections.length > 1) out.push(`# ${section.title}`, '');
     for (const part of parts) {
@@ -295,7 +337,7 @@ function asPlainText() {
       const measures = part.measures.map((m) => ({
         number: m.number,
         text: m.voices.map((v) => v.events
-          .map((ev) => ev.notes.map((r) => r.text || (r.image ? `[${r.name}]` : r.text ?? r.name)).join('+'))
+          .map((ev) => ev.notes.map((t) => t.text || (t.image ? `[${t.name}]` : t.text ?? t.name)).join('+'))
           .join(' ')).filter(Boolean).join(' / '),
       }));
       if (o.layout === 'flow') out.push(measures.map((m) => m.text).filter(Boolean).join(' '));
@@ -317,77 +359,155 @@ async function copy(text, button) {
   setTimeout(() => { button.textContent = old; }, 1500);
 }
 
+function onDrop(zone, onFile) {
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    const f = e.dataTransfer.files[0];
+    if (f) onFile(f);
+  });
+}
+
+// ---------- mappings (one tab each) and their renderings ----------
+
+function selectTab(r, focus = false) {
+  for (const x of renderings) {
+    const on = x === r;
+    x.el.tab.setAttribute('aria-selected', String(on));
+    x.el.tab.tabIndex = on ? 0 : -1;
+    x.el.body.hidden = !on;
+  }
+  if (focus) r.el.tab.focus();
+}
+
+function mountRendering(kind) {
+  const r = { kind, mapText: '', mapUrl: null, rules: null, mapWarnings: [] };
+
+  // Mapping tab.
+  const body = $('map-template').content.firstElementChild.cloneNode(true);
+  const q = (c) => body.querySelector(`.${c}`);
+  const tab = Object.assign(document.createElement('button'), { type: 'button', className: 'tab', textContent: kind.tab, id: `tab-${kind.id}` });
+  tab.setAttribute('role', 'tab');
+  tab.setAttribute('aria-controls', (body.id = `map-${kind.id}`));
+  body.setAttribute('aria-labelledby', tab.id);
+  q('m-hint').textContent = kind.hint;
+  const preset = q('m-preset');
+  for (const p of kind.presets) preset.append(Object.assign(document.createElement('option'), { value: p.url, textContent: p.label }));
+  const starter = q('m-starter');
+  starter.textContent = kind.editor.starter.label;
+  starter.title = kind.editor.starter.title;
+  r.el = { tab, body, text: q('m-text'), status: q('m-status'), url: q('m-url') };
+  $('map-tabs').append(tab);
+  $('map-bodies').append(body);
+
+  r.editor = mountEditor(q('rules'), (rows) => {
+    r.mapUrl = null; // edited, so the URL no longer describes it
+    setMapText(r, rowsToText(rows), 'editor');
+  }, { normalise: kind.normalise, ...kind.editor });
+
+  tab.addEventListener('click', () => selectTab(r));
+  q('m-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) loadMap(r, () => f.text(), f.name);
+  });
+  onDrop(q('drop'), (f) => loadMap(r, () => f.text(), f.name));
+  q('m-url-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const url = r.el.url.value.trim();
+    if (url) loadMap(r, () => fetchText(url), url, url);
+  });
+  r.el.text.addEventListener('input', (e) => setMapText(r, e.target.value, 'textarea'));
+  preset.addEventListener('change', async () => {
+    if (!preset.value) return;
+    const url = new URL(preset.value, location.href).href;
+    const label = preset.selectedOptions[0].textContent;
+    preset.value = ''; // back to "Choose…", so the same preset can be picked again after editing
+    r.el.url.value = url;
+    await loadMap(r, () => fetchText(url), `preset: ${label}`, url);
+  });
+
+  const blankRow = (key = '') => ({ key, kind: 'text', text: '', image: null });
+  q('m-add').addEventListener('click', () => {
+    r.editor.addRows([blankRow()]);
+    r.editor.focusRow(r.editor.getRows().length - 1);
+  });
+  starter.addEventListener('click', () => {
+    const have = new Set(r.editor.getRows().map((row) => kind.normalise(row.key)));
+    const first = r.editor.getRows().length;
+    r.editor.addRows(kind.editor.starter.keys.filter((k) => !have.has(kind.normalise(k))).map((k) => blankRow(k)));
+    r.editor.focusRow(first);
+  });
+  let clearedBackup = null;
+  let clearTimer;
+  q('m-clear').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    clearTimeout(clearTimer);
+    if (clearedBackup != null) { // second click within the window: undo
+      setMapText(r, clearedBackup, 'external');
+      clearedBackup = null;
+      btn.textContent = 'Clear all';
+      return;
+    }
+    if (!r.editor.getRows().length) return;
+    clearedBackup = r.mapText;
+    setMapText(r, '', 'external');
+    btn.textContent = 'Undo clear';
+    clearTimer = setTimeout(() => { clearedBackup = null; btn.textContent = 'Clear all'; }, 8000);
+  });
+  q('m-download').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([r.mapText], { type: 'text/plain' }));
+    a.download = `${kind.id}-mapping.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // Output.
+  const article = $('rendering-template').content.firstElementChild.cloneNode(true);
+  const o = (c) => article.querySelector(`.${c}`);
+  article.id = `rendering-${kind.id}`;
+  o('r-title').textContent = kind.title;
+  o('r-open').textContent = `Open the ${kind.tab} mapping`;
+  o('r-open').addEventListener('click', () => {
+    selectTab(r);
+    $('map-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    r.el.tab.focus({ preventScroll: true });
+  });
+  o('r-copy').addEventListener('click', (e) => {
+    if (r.rules?.size) copy(asPlainText(r), e.currentTarget);
+  });
+  r.out = { root: article, render: o('r-render'), legend: o('r-legend'), warnings: o('r-warnings'), empty: o('r-empty') };
+  $('renderings').append(article);
+
+  renderings.push(r);
+  return r;
+}
+
+for (const kind of KINDS) mountRendering(kind);
+selectTab(renderings[0]);
+// Arrow keys move between mapping tabs.
+$('map-tabs').addEventListener('keydown', (e) => {
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+  if (!step) return;
+  const i = renderings.findIndex((r) => r.el.tab === document.activeElement);
+  if (i < 0) return;
+  e.preventDefault();
+  selectTab(renderings[(i + step + renderings.length) % renderings.length], true);
+});
+
 // ---------- wiring ----------
 
 $('score-file').addEventListener('change', (e) => {
   const f = e.target.files[0];
   if (f) loadScore(() => f.arrayBuffer(), f.name);
 });
-$('map-file').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (f) loadMap(() => f.text(), f.name);
-});
+onDrop(document.querySelector('.drop[data-target="score"]'), (f) => loadScore(() => f.arrayBuffer(), f.name));
 $('score-url-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const url = $('score-url').value.trim();
   if (url) loadScore(() => fetchBytes(url), url, url);
-});
-$('map-url-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const url = $('map-url').value.trim();
-  if (url) loadMap(async () => new TextDecoder().decode(await fetchBytes(url)), url, url);
-});
-$('map-text').addEventListener('input', (e) => setMapText(e.target.value, 'textarea'));
-$('map-preset').addEventListener('change', async (e) => {
-  const sel = e.target;
-  if (!sel.value) return;
-  const url = new URL(sel.value, location.href).href;
-  const label = sel.selectedOptions[0].textContent;
-  sel.value = ''; // back to "Choose…", so the same preset can be picked again after editing
-  $('map-url').value = url;
-  await loadMap(async () => new TextDecoder().decode(await fetchBytes(url)), `preset: ${label}`, url);
-});
-
-// ---------- rule editor ----------
-
-const editor = mountEditor($('rules'), (rows) => {
-  state.mapUrl = null; // edited, so the URL no longer describes it
-  setMapText(rowsToText(rows), 'editor');
-});
-const blankRow = (key = '') => ({ key, kind: 'text', text: '', image: null });
-$('add-rule').addEventListener('click', () => {
-  editor.addRows([blankRow()]);
-  editor.focusRow(editor.getRows().length - 1);
-});
-$('starter-rules').addEventListener('click', () => {
-  const have = new Set(editor.getRows().map((r) => r.key.trim().toUpperCase()));
-  const first = editor.getRows().length;
-  editor.addRows(STARTER_KEYS.filter((k) => !have.has(k)).map((k) => blankRow(k)));
-  editor.focusRow(first);
-});
-let clearedBackup = null;
-let clearTimer;
-$('clear-rules').addEventListener('click', (e) => {
-  const btn = e.currentTarget;
-  clearTimeout(clearTimer);
-  if (clearedBackup != null) { // second click within the window: undo
-    setMapText(clearedBackup, 'external');
-    clearedBackup = null;
-    btn.textContent = 'Clear all';
-    return;
-  }
-  if (!editor.getRows().length) return;
-  clearedBackup = state.mapText;
-  setMapText('', 'external');
-  btn.textContent = 'Undo clear';
-  clearTimer = setTimeout(() => { clearedBackup = null; btn.textContent = 'Clear all'; }, 8000);
-});
-$('download-map').addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([state.mapText], { type: 'text/plain' }));
-  a.download = 'mapping.txt';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 for (const id of ['opt-names', 'opt-rests', 'opt-ties', 'opt-layout', 'opt-coalesce', 'opt-perline']) $(id).addEventListener('change', render);
 $('opt-splitby').addEventListener('change', () => {
@@ -420,20 +540,24 @@ $('box-mode').addEventListener('click', (e) => {
   e.currentTarget.textContent = on ? 'Box select: on (drag to select)' : 'Box select';
   engraver.setBoxMode(on);
 });
-// Hovering a mapped note lights up its source note(s) in the engraving.
-$('render').addEventListener('pointerover', (e) => {
+// Hovering a mapped note in any rendering lights up its source note(s) in the engraving.
+$('renderings').addEventListener('pointerover', (e) => {
   const ev = e.target.closest('.ev');
   engraver.highlight(ev ? ev.dataset.ids.split(' ') : null);
 });
-$('render').addEventListener('pointerleave', () => engraver.highlight(null));
-$('copy-text').addEventListener('click', (e) => copy(asPlainText(), e.currentTarget));
-/** Can the current score + mapping be put in a link? Returns null if yes, else the reason why not. */
+$('renderings').addEventListener('pointerleave', () => engraver.highlight(null));
+
+// ---------- sharing ----------
+
+/** Can the current score + mappings be put in a link? Returns null if yes, else the reason why not. */
 function shareBlocker() {
   if (!state.scoreUrl) return 'To share, load the score from a URL (a file you chose can\'t go in a link).';
-  if (state.mapUrl) return null;
-  const uploaded = [...(state.rules?.entries() ?? [])].filter(([, v]) => v.image?.startsWith('data:')).map(([k]) => (k === 'REST' ? 'rest' : k));
-  if (uploaded.length) {
-    return `To share, swap the uploaded picture${uploaded.length === 1 ? '' : 's'} (${uploaded.join(', ')}) for picture URLs. Uploaded pictures can't go in a link.`;
+  for (const r of renderings) {
+    if (r.mapUrl) continue;
+    const uploaded = [...(r.rules?.entries() ?? [])].filter(([, v]) => v.image?.startsWith('data:')).map(([k]) => r.kind.keyLabel(k));
+    if (uploaded.length) {
+      return `To share, swap the uploaded picture${uploaded.length === 1 ? '' : 's'} in the ${r.kind.tab} mapping (${uploaded.join(', ')}) for picture URLs. Uploaded pictures can't go in a link.`;
+    }
   }
   return null;
 }
@@ -442,7 +566,7 @@ function updateShareButton() {
   const reason = shareBlocker();
   const btn = $('share-link');
   btn.disabled = !!reason;
-  btn.title = reason ?? 'Copy a link that opens this score with this mapping';
+  btn.title = reason ?? 'Copy a link that opens this score with these mappings';
   $('share-hint').textContent = reason ?? '';
   $('share-hint').hidden = !reason;
 }
@@ -457,8 +581,10 @@ async function shareUrl() {
   if ($('opt-coalesce').checked) p.set('coalesce', '1');
   if (state.selected.size) p.set('sel', await packText([...state.selected].join(' ')));
   // An unedited mapping that came from a URL is linked by URL; anything else travels inside the link.
-  if (state.mapUrl) p.set('map', state.mapUrl);
-  else p.set('m', await packText(state.mapText));
+  for (const r of renderings) {
+    if (r.mapUrl) p.set(r.kind.shareUrl, r.mapUrl);
+    else if (r.mapText.trim()) p.set(r.kind.shareText, await packText(r.mapText));
+  }
   u.search = p.toString();
   return u.toString();
 }
@@ -469,30 +595,23 @@ $('share-link').addEventListener('click', async (e) => {
   copy(await shareUrl(), btn);
 });
 
-// Drag and drop onto either drop zone.
-for (const zone of document.querySelectorAll('.drop')) {
-  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-  zone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    zone.classList.remove('over');
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
-    if (zone.dataset.target === 'score') loadScore(() => f.arrayBuffer(), f.name);
-    else loadMap(() => f.text(), f.name);
-  });
-}
+// ---------- example and startup ----------
 
+const EXAMPLE_MAPS = { melodic: 'examples/foods.txt', rhythmic: 'examples/rhythm-kodaly.txt' };
 $('load-example').addEventListener('click', () => {
   const s = new URL('examples/twinkle.musicxml', location.href).href;
-  const m = new URL('examples/foods.txt', location.href).href;
   $('score-url').value = s;
-  $('map-url').value = m;
   loadScore(() => fetchBytes(s), 'example score', s);
-  loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), 'example mapping', m);
+  for (const r of renderings) {
+    if (!EXAMPLE_MAPS[r.kind.id]) continue;
+    const m = new URL(EXAMPLE_MAPS[r.kind.id], location.href).href;
+    r.el.url.value = m;
+    loadMap(r, () => fetchText(m), 'example mapping', m);
+  }
 });
 
-// Share links: ?score=<url> plus either &map=<url> or &m=<packed mapping text>.
+// Share links: ?score=<url>, and per rendering either a mapping URL or packed mapping text
+// (melodic: map / m; rhythmic: rmap / rm).
 const params = new URLSearchParams(location.search);
 if (params.get('split')) { $('opt-split').value = params.get('split'); $('opt-splitby').value = 'pitch'; }
 if (params.get('splitby') === 'voice') $('opt-splitby').value = 'voice';
@@ -505,12 +624,17 @@ if (params.get('score')) {
   const selection = params.get('sel') ? (await unpackText(params.get('sel')).catch(() => '')).split(' ').filter(Boolean) : [];
   loadScore(() => fetchBytes(s), s, s, { selection });
 }
-if (params.get('m')) {
-  loadMap(() => unpackText(params.get('m')), 'shared mapping', null, { persist: false });
-} else if (params.get('map')) {
-  const m = params.get('map');
-  $('map-url').value = m;
-  loadMap(async () => new TextDecoder().decode(await fetchBytes(m)), m, m, { persist: false });
-} else {
-  setMapText(recall() ?? '', 'external');
+// A link that carries any mapping shows exactly what was shared: renderings it leaves out start empty.
+const shared = KINDS.some((k) => params.has(k.shareUrl) || params.has(k.shareText));
+for (const r of renderings) {
+  const { shareUrl: urlParam, shareText: textParam, storeKey } = r.kind;
+  if (params.get(textParam)) {
+    loadMap(r, () => unpackText(params.get(textParam)), 'shared mapping', null, { persist: false });
+  } else if (params.get(urlParam)) {
+    const m = params.get(urlParam);
+    r.el.url.value = m;
+    loadMap(r, () => fetchText(m), m, m, { persist: false });
+  } else {
+    setMapText(r, shared ? '' : (recall(storeKey) ?? ''), 'external', { persist: !shared });
+  }
 }

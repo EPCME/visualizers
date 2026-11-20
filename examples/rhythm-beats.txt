@@ -1,0 +1,15 @@
+# Example rhythm mapping: how many beats each note lasts, counting a quarter note as one beat.
+whole = 4
+dotted half = 3
+half = 2
+dotted quarter = 1½
+quarter = 1
+dotted eighth = ¾
+eighth = ½
+16th = ¼
+whole rest = rest 4
+half rest = rest 2
+quarter rest = rest 1
+eighth rest = rest ½
+rest = rest
+* = ?

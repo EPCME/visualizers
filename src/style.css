@@ -82,7 +82,13 @@ summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
 .status.error { color: var(--err); }
 .examples { color: var(--muted); margin: 1rem 0 2rem; }
 
-#output { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+/* Each rendering (melodic, rhythmic, …) is its own card, stacked under the score heading. */
+.rendering { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.rendering + .rendering { margin-top: 16px; }
+.r-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.r-title { margin: 0; font-size: 1.15rem; }
+.r-empty { margin: 0; color: var(--muted); font-size: .9rem; }
+.r-empty[hidden] { display: none; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .score-meta h2 { font-size: 1.4rem; margin: 0; }
 .score-meta p { margin: 0; color: var(--muted); }
@@ -111,6 +117,12 @@ summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
   border-left: 1px solid var(--line); box-shadow: 1px 0 0 var(--line); /* closing barline at each row end */
 }
 .layout-measures .tok { max-width: 100%; }
+/* fitMeasures(): lay each measure out at its natural one-line width (pictures counted at their widest) to read it */
+.measuring .measure { width: max-content; }
+.measuring .voice { flex-wrap: nowrap; }
+.measuring .ev { flex: none; }
+.measuring .tok { max-width: none; }
+.measuring .tok.pic img { width: 5rem; }
 .mnum { position: absolute; top: .1rem; left: .35rem; font-size: .7rem; color: var(--muted); }
 .voice { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; }
 .voice + .voice { margin-top: 4px; padding-top: 4px; border-top: 1px dotted var(--line); }
@@ -179,9 +191,23 @@ footer { color: var(--muted); font-size: .85rem; padding-bottom: 2rem; }
 button.secondary { background: transparent; color: var(--accent); font-size: .85rem; padding: .35em .7em; }
 button.secondary:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); filter: none; }
 button.link.danger { color: var(--err); font-size: .85rem; margin-left: auto; }
-#map-load .drop { margin-top: 8px; }
+.m-load .drop { margin-top: 8px; }
+/* duration keys ("dotted quarter rest") need more room than pitch keys */
+.wide-keys .rule { grid-template-columns: 9.5rem auto auto 1fr auto; }
+
+/* mapping tabs */
+.tabs { display: flex; gap: 4px; margin: .5rem 0 .75rem; border-bottom: 1px solid var(--line); }
+.tab {
+  background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: .35em .8em; margin-bottom: -1px; font-size: .95rem;
+}
+.tab:hover { color: var(--ink); filter: none; }
+.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.map-body[hidden] { display: none; }
+
 @media (max-width: 520px) {
   .rule { grid-template-columns: 4.2rem auto 1fr auto; }
+  .wide-keys .rule { grid-template-columns: 9.5rem auto 1fr auto; }
   .rule .r-text, .rule .r-image { grid-column: 1 / -1; }
   .rule .r-del { grid-column: 4; grid-row: 1; }
 }
@@ -231,3 +257,9 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 .part h4 { margin: .75rem 0 .4rem; font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 #opt-split { font: inherit; font-size: .9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: .2em .4em; width: 8em; }
 .ev[data-ids] { cursor: default; }
+
+/* ---- mapping + options, below the engraved score ---- */
+.settings { margin-bottom: 16px; grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
+@media (max-width: 760px) { .settings { grid-template-columns: 1fr; } }
+.options .controls { flex-direction: column; align-items: flex-start; gap: 10px; margin-top: .5rem; }
+.options .controls label { flex-wrap: wrap; }

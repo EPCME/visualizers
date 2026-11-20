@@ -1,0 +1,11 @@
+# Example rhythm mapping: Kodály rhythm syllables.
+# Format: DURATION = text. "dotted" rules beat plain ones; "rest" covers every rest.
+whole = ta-a-a-a
+dotted half = ta-a-a
+half = ta-a
+dotted quarter = ta-i
+quarter = ta
+eighth = ti
+16th = ri
+rest = (sh)
+* = ?

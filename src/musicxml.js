@@ -71,7 +71,8 @@ const kids = (el, name) => [...el.children].filter((c) => c.localName === name);
 /**
  * Parse MusicXML text into:
  * { title, composer, xml, parts: [{ id, name, measures: [{ number, voices: [{ voice, events: [[note, ...chord], ...] }] }] }] }
- * Each note: { id, step, alter, octave, midi, rest, unpitched, duration, type, dots, grace, tieStop, staff, voice }
+ * Each note: { id, step, alter, octave, midi, rest, unpitched, duration, ql, type, dots, grace, tieStart, tieStop, tied?, staff, voice }
+ * (ql is the length in quarter notes; `tied` is set on the first note of a tied chain, see linkTies)
  * Every <note> gets an `id` attribute (kept if already present) so the engraved score can be linked back;
  * `xml` is the score re-serialised with those ids.
  */
@@ -120,10 +121,17 @@ export function parseMusicXml(xml) {
 
   const parts = [];
   for (const [id, measureEls] of partMeasures) {
+    let divisions = 1; // <divisions> per quarter note; it carries over until an <attributes> changes it
     const measures = measureEls.map((mEl) => {
       const voices = new Map();
-      for (const nEl of kids(mEl, 'note')) {
-        const note = parseNote(nEl);
+      for (const el of mEl.children) {
+        if (el.localName === 'attributes') {
+          divisions = Number(text(el, ':scope > divisions')) || divisions;
+          continue;
+        }
+        if (el.localName !== 'note') continue;
+        const note = parseNote(el);
+        note.ql = note.duration / divisions;
         const vKey = (note.staff ? `${note.staff}:` : '') + note.voice;
         if (!voices.has(vKey)) voices.set(vKey, { voice: note.voice, staff: note.staff, events: [] });
         const events = voices.get(vKey).events;
@@ -132,9 +140,38 @@ export function parseMusicXml(xml) {
       }
       return { number: mEl.getAttribute('number'), voices: [...voices.values()] };
     });
+    linkTies(measures);
     parts.push({ id, name: partNames.get(id) ?? id, measures });
   }
   return { title, composer, parts, xml: new XMLSerializer().serializeToString(doc) };
+}
+
+/**
+ * Follow ties through each voice (across barlines). The first note of a tied chain gets `tied`: every note in
+ * the chain, itself included, so a view that merges ties can show the chain's total length.
+ */
+function linkTies(measures) {
+  const open = new Map(); // voice key → Map(midi → chain head)
+  for (const m of measures) {
+    for (const v of m.voices) {
+      const vKey = `${v.staff || '1'}:${v.voice}`;
+      if (!open.has(vKey)) open.set(vKey, new Map());
+      const pending = open.get(vKey);
+      for (const chord of v.events) {
+        for (const n of chord) {
+          if (n.midi == null) continue;
+          const head = n.tieStop ? pending.get(n.midi) : null;
+          if (head) {
+            head.tied.push(n);
+            if (!n.tieStart) pending.delete(n.midi);
+          } else if (n.tieStart) {
+            n.tied = [n];
+            pending.set(n.midi, n);
+          }
+        }
+      }
+    }
+  }
 }
 
 function parseNote(el) {
@@ -151,6 +188,7 @@ function parseNote(el) {
     type: text(el, ':scope > type'),
     dots: el.querySelectorAll(':scope > dot').length,
     tieStop: [...el.querySelectorAll(':scope > tie')].some((t) => t.getAttribute('type') === 'stop'),
+    tieStart: [...el.querySelectorAll(':scope > tie')].some((t) => t.getAttribute('type') === 'start'),
     voice: text(el, ':scope > voice') || '1',
     staff: text(el, ':scope > staff'),
   };

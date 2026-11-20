@@ -31,8 +31,6 @@ export async function imageFileToDataUrl(file) {
   return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
 }
 
-export const STARTER_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-
 export function rowsToText(rows) {
   return rows
     .filter((r) => r.key.trim())
@@ -49,12 +47,24 @@ export function rowsFromEntries(entries) {
   }));
 }
 
+let editorSeq = 0;
+
 /**
  * Mount the editor in `container`. `onChange(rows)` fires after every edit.
- * Returns { setRows(rows), getRows(), addRow(row), focusLast() }.
+ * `keys` describes the rule keys: { normalise, placeholder, title, suggestions?, wide? } (pitches by default).
+ * Returns { setRows(rows), getRows(), addRows(rows), focusRow(i) }.
  */
-export function mountEditor(container, onChange) {
+export function mountEditor(container, onChange, keys = {}) {
+  const { normalise = normaliseKey, placeholder = 'G', title = 'Note: G, F#, Bb, C4, rest, or * for everything else', suggestions, wide } = keys;
   let rows = [];
+  container.classList.toggle('wide-keys', !!wide);
+  let listId = null;
+  if (suggestions?.length) {
+    listId = `rule-keys-${++editorSeq}`;
+    const list = Object.assign(document.createElement('datalist'), { id: listId });
+    list.append(...suggestions.map((v) => Object.assign(document.createElement('option'), { value: v })));
+    container.after(list);
+  }
 
   const el = (tag, props = {}, ...children) => {
     const n = Object.assign(document.createElement(tag), props);
@@ -63,11 +73,11 @@ export function mountEditor(container, onChange) {
   };
 
   function rowEl(row, i) {
-    const keyValid = !row.key.trim() || normaliseKey(row.key) != null;
+    const keyValid = !row.key.trim() || normalise(row.key) != null;
     const key = el('input', {
-      className: 'r-key' + (keyValid ? '' : ' invalid'), value: row.key, placeholder: 'G',
-      title: 'Note: G, F#, Bb, C4, rest, or * for everything else', autocomplete: 'off', spellcheck: false,
+      className: 'r-key' + (keyValid ? '' : ' invalid'), value: row.key, placeholder, title, autocomplete: 'off', spellcheck: false,
     });
+    if (listId) key.setAttribute('list', listId);
     key.setAttribute('aria-label', `Rule ${i + 1} note`);
     key.dataset.field = 'key';
 
@@ -129,7 +139,7 @@ export function mountEditor(container, onChange) {
     if (!f) return;
     const row = rows[idx(e.target)];
     row[f] = e.target.value;
-    if (f === 'key') e.target.classList.toggle('invalid', !!row.key.trim() && normaliseKey(row.key) == null);
+    if (f === 'key') e.target.classList.toggle('invalid', !!row.key.trim() && normalise(row.key) == null);
     if (f === 'image') {
       const old = e.target.closest('.rule').querySelector('.r-thumb');
       const img = el('img', { className: 'r-thumb', src: row.image, alt: '' });
